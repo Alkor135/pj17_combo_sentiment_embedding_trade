@@ -8,13 +8,17 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import yaml
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
-from shared.config import load_settings
-
-settings = load_settings("sentiment")
+# --- Загрузка настроек из {ticker}/settings.yaml (common + sentiment) ---
+TICKER_DIR = Path(__file__).resolve().parents[1]
+_raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+settings = {**(_raw.get("common") or {}), **(_raw.get("sentiment") or {})}
+_ticker = settings.get("ticker", "")
+_ticker_lc = settings.get("ticker_lc", _ticker.lower())
+for _k, _v in list(settings.items()):
+    if isinstance(_v, str):
+        settings[_k] = _v.replace("{ticker}", _ticker).replace("{ticker_lc}", _ticker_lc)
 
 pkl_path = Path(settings["sentiment_output_pkl"])
 

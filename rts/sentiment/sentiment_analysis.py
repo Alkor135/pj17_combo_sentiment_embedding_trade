@@ -19,7 +19,6 @@ import pickle
 import re
 import sqlite3
 import subprocess
-import sys
 
 import requests
 from datetime import datetime, timezone
@@ -30,11 +29,9 @@ import numpy as np
 import pandas as pd
 import tiktoken
 import typer
+import yaml
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
-from shared.config import load_settings
+TICKER_DIR = Path(__file__).resolve().parents[1]
 
 app = typer.Typer(help="Собирает sentiment оценки новостей через локальную модель Ollama.")
 
@@ -61,7 +58,7 @@ def cleanup_old_logs(log_dir: Path, max_files: int = 3) -> None:
 
 def setup_logging(verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
-    log_dir = _PKG_ROOT / "log"
+    log_dir = TICKER_DIR / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     log_file = log_dir / f"sentiment_analysis_{timestamp}.txt"
@@ -258,7 +255,14 @@ def main(
     verbose: bool = typer.Option(False, help="Включить подробный лог."),
 ) -> None:
     setup_logging(verbose)
-    settings = load_settings("sentiment")
+    # --- Загрузка настроек из rts/settings.yaml (common + sentiment) ---
+    _raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+    settings = {**(_raw.get("common") or {}), **(_raw.get("sentiment") or {})}
+    _t = settings.get("ticker", "")
+    _tl = settings.get("ticker_lc", _t.lower())
+    for _k, _v in list(settings.items()):
+        if isinstance(_v, str):
+            settings[_k] = _v.replace("{ticker}", _t).replace("{ticker_lc}", _tl)
 
     ticker = settings.get("ticker", "RTS")
     if model is None:
@@ -269,7 +273,7 @@ def main(
     if output_pkl is None:
         output_pkl = sentiment_output
     if not output_pkl.is_absolute():
-        output_pkl = _PKG_ROOT / output_pkl
+        output_pkl = TICKER_DIR / output_pkl
 
     logging.info("Sentiment output PKL: %s", output_pkl)
 

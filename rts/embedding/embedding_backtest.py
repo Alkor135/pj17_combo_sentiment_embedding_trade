@@ -15,18 +15,21 @@ from pathlib import Path
 from datetime import datetime
 import pickle
 import sqlite3
-import sys
 import logging
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import yaml
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
-from shared.config import load_settings
-
-settings = load_settings("embedding")
+# --- Загрузка настроек из {ticker}/settings.yaml (common + embedding) ---
+TICKER_DIR = Path(__file__).resolve().parents[1]
+_raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+settings = {**(_raw.get("common") or {}), **(_raw.get("embedding") or {})}
+_ticker = settings.get("ticker", "")
+_ticker_lc = settings.get("ticker_lc", _ticker.lower())
+for _k, _v in list(settings.items()):
+    if isinstance(_v, str):
+        settings[_k] = _v.replace("{ticker}", _ticker).replace("{ticker_lc}", _ticker_lc)
 
 _CHUNK_MATRIX_CACHE = {}  # Кэш для матриц чанков
 EXPLAIN_STORE = {}  # { k -> [ { trade_date, best_j_date, score, pairs, body_cur, body_prev } ] }
@@ -43,7 +46,7 @@ model_name = settings.get('model_name', 'bge-m3')
 provider = settings['provider']
 
 # === Логирование ===
-log_dir = _PKG_ROOT / 'log'
+log_dir = TICKER_DIR / 'log'
 log_dir.mkdir(parents=True, exist_ok=True)
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_file = log_dir / f'embedding_backtest_{timestamp}.txt'
@@ -454,7 +457,7 @@ def main(path_db_day, cache_file):
     fig.tight_layout()
 
     # Сохранение графика
-    plot_dir = _PKG_ROOT / 'plots'
+    plot_dir = TICKER_DIR / 'plots'
     plot_dir.mkdir(parents=True, exist_ok=True)
     plot_path = plot_dir / f'embedding_backtest_{model_name.split(":")[0]}_{provider}.png'
     plt.savefig(plot_path)

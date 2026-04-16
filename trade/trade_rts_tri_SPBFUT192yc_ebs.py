@@ -9,21 +9,22 @@
 Защита от двойной записи через маркер state/{ticker}_{date}.done. Лог с ротацией (3 файла).
 """
 
-import sys
 from pathlib import Path
 from datetime import datetime, date
 import re
 import logging
 import yaml
 
-# --- Конфигурация из settings.yaml ---
+# --- Конфигурация из rts/settings.yaml (common + combined) ---
 ticker_lc = 'rts'
-_RTS_ROOT = Path(__file__).resolve().parents[1] / ticker_lc
-if str(_RTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(_RTS_ROOT))
-from shared.config import load_settings
-
-cfg = load_settings("combined", start=_RTS_ROOT)
+TICKER_DIR = Path(__file__).resolve().parents[1] / ticker_lc
+_raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+cfg = {**(_raw.get("common") or {}), **(_raw.get("combined") or {})}
+_t = cfg.get("ticker", "")
+_tl = cfg.get("ticker_lc", _t.lower())
+for _k, _v in list(cfg.items()):
+    if isinstance(_v, str):
+        cfg[_k] = _v.replace("{ticker}", _t).replace("{ticker_lc}", _tl)
 
 trade_settings_path = Path(__file__).parent / 'settings.yaml'
 with open(trade_settings_path, encoding='utf-8') as f:

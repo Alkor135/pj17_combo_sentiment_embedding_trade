@@ -8,19 +8,22 @@
 """
 
 import pandas as pd
-import sys
 from pathlib import Path
 import sqlite3
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from datetime import datetime
+import yaml
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
-from shared.config import load_settings
-
-settings = load_settings()
+# --- Загрузка настроек из {ticker}/settings.yaml (только секция common) ---
+TICKER_DIR = Path(__file__).resolve().parents[1]
+_raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+settings = dict(_raw.get("common") or {})
+_ticker = settings.get("ticker", "")
+_ticker_lc = settings.get("ticker_lc", _ticker.lower())
+for _k, _v in list(settings.items()):
+    if isinstance(_v, str):
+        settings[_k] = _v.replace("{ticker}", _ticker).replace("{ticker_lc}", _ticker_lc)
 
 ticker = settings['ticker']
 ticker_lc = ticker.lower()
@@ -34,7 +37,7 @@ md_path = Path(settings['md_path'])
 provider = settings['provider']
 
 # Создание папки для логов
-log_dir = _PKG_ROOT / 'log'
+log_dir = TICKER_DIR / 'log'
 log_dir.mkdir(parents=True, exist_ok=True)
 
 # Имя файла лога с датой и временем запуска (один файл на запуск!)

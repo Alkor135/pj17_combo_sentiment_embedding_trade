@@ -28,7 +28,6 @@ pj17_combo_sentiment_embedding_trade/
 │   ├── settings.yaml                   # секции common / embedding / sentiment / combined
 │   ├── rules.yaml                      # правила для sentiment (follow/invert/skip)
 │   ├── shared/
-│   │   ├── config.py                   # load_settings(section) — хелпер загрузки
 │   │   ├── download_minutes_to_db.py
 │   │   ├── convert_minutes_to_days.py
 │   │   ├── create_markdown_files.py
@@ -62,11 +61,12 @@ pj17_combo_sentiment_embedding_trade/
 
 ## Ключевые принципы
 
-### 1. Единый settings.yaml с секциями
-`rts/settings.yaml` содержит `common` + `embedding` + `sentiment` + `combined`. Хелпер
-`shared/config.py::load_settings("embedding")` возвращает плоский dict = common + указанная
-секция (секция переопределяет одноимённые ключи common). Placeholders `{ticker}` и
-`{ticker_lc}` подставляются автоматически.
+### 1. Единый settings.yaml с секциями, загрузка инлайном в каждом скрипте
+`rts/settings.yaml` содержит `common` + `embedding` + `sentiment` + `combined`. Каждый
+скрипт сам читает YAML в ~7 строк инлайн-блоком: `common` + нужная секция плоско мержатся
+(секция переопределяет одноимённые ключи common), плейсхолдеры `{ticker}` / `{ticker_lc}`
+подставляются в строковых значениях. Общего хелпера (`shared/config.py`) нет — каждый
+скрипт самодостаточен. Образец блока — в любом из `rts/shared/*.py`.
 
 ### 2. Инверсия эмбеддинг-прогноза — в файле прогноза, а не в торговом скрипте
 `embedding_to_predict.py` применяет `invert_signal: true` ПРИ ЗАПИСИ файла. Это делает файл

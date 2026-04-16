@@ -17,15 +17,18 @@ import logging
 from datetime import datetime
 import pandas as pd
 import tiktoken
-import sys
 import time
+import yaml
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
-from shared.config import load_settings
-
-settings = load_settings("embedding")
+# --- Загрузка настроек из {ticker}/settings.yaml (common + embedding) ---
+TICKER_DIR = Path(__file__).resolve().parents[1]
+_raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+settings = {**(_raw.get("common") or {}), **(_raw.get("embedding") or {})}
+_ticker = settings.get("ticker", "")
+_ticker_lc = settings.get("ticker_lc", _ticker.lower())
+for _k, _v in list(settings.items()):
+    if isinstance(_v, str):
+        settings[_k] = _v.replace("{ticker}", _ticker).replace("{ticker_lc}", _ticker_lc)
 
 # ==== Параметры ====
 ticker = settings['ticker']
@@ -51,7 +54,7 @@ else:
 cache_file = Path(settings['cache_file'])
 
 # Создание папки для логов
-log_dir = _PKG_ROOT / 'log'
+log_dir = TICKER_DIR / 'log'
 log_dir.mkdir(parents=True, exist_ok=True)
 
 # Имя файла лога с датой и временем запуска (один файл на запуск!)

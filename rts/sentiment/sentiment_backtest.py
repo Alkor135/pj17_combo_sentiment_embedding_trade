@@ -10,7 +10,6 @@ follow — LONG при sentiment>0, SHORT при sentiment<0; invert — нао�
 from __future__ import annotations
 
 import pickle
-import sys
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -23,10 +22,7 @@ import quantstats_lumi as qs
 import typer
 import yaml
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
-from shared.config import load_settings
+TICKER_DIR = Path(__file__).resolve().parents[1]
 
 
 def _parse_date(value) -> Optional[date]:
@@ -45,7 +41,7 @@ VALID_ACTIONS = {"follow", "invert", "skip"}
 
 def resolve_sentiment_pkl(settings: dict) -> Path:
     sentiment_path = Path(settings.get("sentiment_output_pkl", "sentiment_scores.pkl"))
-    return sentiment_path if sentiment_path.is_absolute() else _PKG_ROOT / sentiment_path
+    return sentiment_path if sentiment_path.is_absolute() else TICKER_DIR / sentiment_path
 
 
 def load_sentiment(path: Path) -> pd.DataFrame:
@@ -623,7 +619,15 @@ def main(
         help="Верхняя граница окна (YYYY-MM-DD). Переопределяет settings.yaml:backtest_date_to.",
     ),
 ) -> None:
-    settings = load_settings("sentiment")
+    # --- Загрузка настроек из rts/settings.yaml (common + sentiment) ---
+    _raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+    settings = {**(_raw.get("common") or {}), **(_raw.get("sentiment") or {})}
+    _t = settings.get("ticker", "")
+    _tl = settings.get("ticker_lc", _t.lower())
+    for _k, _v in list(settings.items()):
+        if isinstance(_v, str):
+            settings[_k] = _v.replace("{ticker}", _t).replace("{ticker_lc}", _tl)
+
     ticker = settings.get("ticker", "RTS")
 
     sentiment_pkl = resolve_sentiment_pkl(settings)
@@ -631,7 +635,7 @@ def main(
         quantity = int(settings.get("quantity_test", 1))
 
     if rules_yaml is None:
-        rules_yaml = _PKG_ROOT / "rules.yaml"
+        rules_yaml = TICKER_DIR / "rules.yaml"
     rules = load_rules(rules_yaml)
 
     d_from = _parse_date(date_from if date_from is not None else settings.get("backtest_date_from"))
@@ -655,9 +659,9 @@ def main(
         typer.echo("Нет доступных сделок для бэктеста. Проверьте pkl и правила.")
         raise typer.Exit(code=1)
 
-    report_folder = _PKG_ROOT / "plots"
+    report_folder = TICKER_DIR / "plots"
     output_html = report_folder / "sentiment_backtest.html"
-    output_xlsx = _PKG_ROOT / "sentiment_backtest_results.xlsx"
+    output_xlsx = TICKER_DIR / "sentiment_backtest_results.xlsx"
     result.to_excel(output_xlsx, index=False)
     build_report(result, ticker, output_html, rules_yaml)
 

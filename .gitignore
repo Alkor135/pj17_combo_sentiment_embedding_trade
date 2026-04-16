@@ -205,3 +205,20 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Мои настройки
+rts/group_stats/*
+rts/log/*
+rts/embedding/log/*
+rts/sentiment/log/*
+rts/plots/*
+rts/*.pkl
+rts/embedding/*.pkl
+rts/sentiment/*.pkl
+rts/*.xlsx
+rts/embedding/*.xlsx
+rts/sentiment/*.xlsx
+
+trade/quik_export/*.csv
+trade/log/*
+trade/state/*

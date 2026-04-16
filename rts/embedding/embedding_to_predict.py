@@ -17,26 +17,29 @@ from __future__ import annotations
 import logging
 import pickle
 import sqlite3
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
-if str(_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PKG_ROOT))
-from shared.config import load_settings
-
-settings = load_settings("embedding")
+# --- Загрузка настроек из {ticker}/settings.yaml (common + embedding) ---
+TICKER_DIR = Path(__file__).resolve().parents[1]
+_raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+settings = {**(_raw.get("common") or {}), **(_raw.get("embedding") or {})}
+_ticker = settings.get("ticker", "")
+_ticker_lc = settings.get("ticker_lc", _ticker.lower())
+for _k, _v in list(settings.items()):
+    if isinstance(_v, str):
+        settings[_k] = _v.replace("{ticker}", _ticker).replace("{ticker_lc}", _ticker_lc)
 
 cache_file = Path(settings['cache_file'])
 path_db_day = Path(settings['path_db_day'])
 predict_path = Path(settings['predict_path'])
 invert_signal = bool(settings.get('invert_signal', False))
 
-log_dir = _PKG_ROOT / 'log'
+log_dir = TICKER_DIR / 'log'
 log_dir.mkdir(parents=True, exist_ok=True)
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_file = log_dir / f'embedding_to_predict_{timestamp}.txt'

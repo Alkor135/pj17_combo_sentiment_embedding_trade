@@ -12,12 +12,12 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-_PKG_ROOT = Path(__file__).resolve().parents[1]
+TICKER_DIR = Path(__file__).resolve().parents[1]
 
 # --- Пути к файлам ---
-SENTIMENT_XLSX = _PKG_ROOT / "sentiment_backtest_results.xlsx"
-EMBEDDING_XLSX = _PKG_ROOT / "embedding" / "df_rez_output.xlsx"
-OUTPUT_HTML = _PKG_ROOT / "plots" / "compare_strategies.html"
+SENTIMENT_XLSX = TICKER_DIR / "sentiment_backtest_results.xlsx"
+EMBEDDING_XLSX = TICKER_DIR / "embedding" / "df_rez_output.xlsx"
+OUTPUT_HTML = TICKER_DIR / "plots" / "compare_strategies.html"
 
 # --- Загрузка данных ---
 df_sent = pd.read_excel(SENTIMENT_XLSX)

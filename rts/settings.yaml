@@ -1,0 +1,55 @@
+# rts/settings.yaml
+# Единая конфигурация тикера RTS для двух стратегий pj17 (embedding + sentiment).
+# Секции common/embedding/sentiment/combined читаются через rts/shared/config.py:
+# каждая специфичная секция «накрывает» одноимённые ключи из common.
+
+common:
+  ticker: 'RTS'
+  ticker_lc: 'rts'
+  ticker_close: 'RIM6'               # Фьючерс для закрытия позиции (trade)
+  ticker_open: 'RIM6'                # Фьючерс для открытия позиции (trade)
+  quantity_test: 1                   # Количество контрактов для бэктеста и аналитики
+  notional_capital: 90000            # Условный капитал для QuantStats отчёта
+
+  # Выбор новостей по провайдеру
+  provider: 'investing_prime_interfax'
+
+  time_start: '21:00:00'             # Начало торговой сессии MOEX (frontier cut)
+  time_end: '20:59:59'
+  num_mds: 200                       # Последних интервалов (дней) для markdown
+  num_dbs: 8                         # Последних файлов БД новостей для обработки
+  start_date_download_minutes: '2025-06-24'
+
+  md_path: 'C:/Users/Alkor/gd/md_rss_all_oil_gaz'
+  db_news_dir: 'C:/Users/Alkor/gd/db_rss'
+  path_db_minute: 'C:/Users/Alkor/gd/data_quote_db/{ticker}_futures_minute_2025.db'
+  path_db_day:    'C:/Users/Alkor/gd/data_quote_db/{ticker}_futures_day_2025_21-00.db'
+  # CSV с минутами от QUIK lua-экспортёра (trade/quik_export_minutes.lua)
+  quik_csv_path: 'C:/Users/Alkor/VSCode/pj17_combo_sentiment_embedding_trade/trade/quik_export/minutes.csv'
+
+embedding:
+  # Ollama-модель для векторизации
+  model_name: 'embeddinggemma'
+  url_ai: 'http://localhost:11434/api/embeddings'
+  min_prev_files: 2
+  start_date_test: '2025-10-01'
+  test_days: 23
+  cache_file: 'C:/Users/Alkor/VSCode/pj17_combo_sentiment_embedding_trade/rts/embedding/embeddings_ollama.pkl'
+  predict_path: 'C:/Users/Alkor/gd/predict_ai/{ticker_lc}_embedding'
+  invert_signal: true                # Инверсия применяется в embedding_to_predict.py
+
+sentiment:
+  sentiment_model: 'gemma3:12b'
+  sentiment_output_pkl: 'C:/Users/Alkor/VSCode/pj17_combo_sentiment_embedding_trade/rts/sentiment/sentiment_scores.pkl'
+  predict_path: 'C:/Users/Alkor/gd/predict_ai/{ticker_lc}_sentiment_gemma'
+
+  # Окно дат для sentiment_group_stats.py
+  stats_date_from: '2025-09-01'
+  stats_date_to: '2027-01-01'
+
+  # Окно дат для sentiment_backtest.py
+  backtest_date_from: '2025-09-01'
+  backtest_date_to: '2027-01-01'
+
+combined:
+  predict_path: 'C:/Users/Alkor/gd/predict_ai/{ticker_lc}_combined'

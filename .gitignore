@@ -220,5 +220,6 @@ rts/embedding/*.xlsx
 rts/sentiment/*.xlsx
 
 trade/quik_export/*.csv
+trade/quik_export/*.json
+trade/state/*.done
 trade/log/*
-trade/state/*

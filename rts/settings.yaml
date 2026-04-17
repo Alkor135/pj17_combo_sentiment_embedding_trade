@@ -41,7 +41,7 @@ embedding:
 sentiment:
   sentiment_model: 'gemma3:12b'
   sentiment_output_pkl: 'C:/Users/Alkor/VSCode/pj17_combo_sentiment_embedding_trade/rts/sentiment/sentiment_scores.pkl'
-  predict_path: 'C:/Users/Alkor/gd/predict_ai/{ticker_lc}_sentiment_gemma'
+  predict_path: 'C:/Users/Alkor/gd/predict_ai/{ticker_lc}_sentiment'
 
   # Окно дат для sentiment_group_stats.py
   stats_date_from: '2025-09-01'

@@ -2,6 +2,7 @@
 Оркестратор pj17 для ежедневного запуска из Windows Task Scheduler в 21:00:05.
 
 Порядок подобран так, чтобы .tri попал в QUIK максимально рано, а аналитика шла в хвосте:
+  0) prepare.py (удаляет тестовые результаты, если запуск до 21:00)
   1) beget/sync_files.py
   2) rts/shared: download_minutes_to_db, convert_minutes_to_days, create_markdown_files
   3) rts/embedding: create_embedding, embedding_backtest, embedding_to_predict (пишет инвертир.)
@@ -53,17 +54,18 @@ for old in sorted(LOG_DIR.glob("run_all_*.txt"))[:-3]:
 
 
 HARD_STEPS: list[Path] = [
-    ROOT / "beget" / "sync_files.py",
-    ROOT / "rts" / "shared" / "download_minutes_to_db.py",
-    ROOT / "rts" / "shared" / "convert_minutes_to_days.py",
-    ROOT / "rts" / "shared" / "create_markdown_files.py",
-    ROOT / "rts" / "embedding" / "create_embedding.py",
-    ROOT / "rts" / "embedding" / "embedding_backtest.py",
-    ROOT / "rts" / "embedding" / "embedding_to_predict.py",
-    ROOT / "rts" / "sentiment" / "sentiment_analysis.py",
-    ROOT / "rts" / "sentiment" / "sentiment_to_predict.py",
-    ROOT / "rts" / "combine_predictions.py",
-    ROOT / "trade" / "trade_rts_tri_SPBFUT192yc_ebs.py",
+    ROOT / "prepare.py",  # удаление тестовых файлов, если запуск до 21:00:00 (защита рабочих результатов)
+    ROOT / "beget" / "sync_files.py",  # синхронизация файлов с удалённого сервера (включая .tri для QUIK)
+    ROOT / "rts" / "shared" / "download_minutes_to_db.py",  # загрузка минутных данных в БД (для последующей обработки)
+    ROOT / "rts" / "shared" / "convert_minutes_to_days.py",  # агрегация минутных данных в дневные (для обучения эмбеддингов)
+    ROOT / "rts" / "shared" / "create_markdown_files.py",  # создание .md файлов с текстами для эмбеддингов и сентимента
+    ROOT / "rts" / "embedding" / "create_embedding.py",  # обучение эмбеддингов и сохранение в БД
+    ROOT / "rts" / "embedding" / "embedding_backtest.py",  # бэктест эмбеддингов на исторических данных
+    ROOT / "rts" / "embedding" / "embedding_to_predict.py",  # преобразование эмбеддингов в предикты (инвертир. для удобства)
+    ROOT / "rts" / "sentiment" / "sentiment_analysis.py",  # анализ сентимента с помощью LLM и сохранение в БД
+    ROOT / "rts" / "sentiment" / "sentiment_to_predict.py",  # преобразование сентимента в предикты (без инвертирования, т.к. уже в нужной форме)
+    ROOT / "rts" / "combine_predictions.py",  # согласованное голосование между эмбеддингами и сентиментом для получения финального сигнала
+    ROOT / "trade" / "trade_rts_tri_SPBFUT192yc_ebs.py",  # торговый скрипт, который читает финальный сигнал и выставляет .tri в QUIK (критично по времени)
 ]
 
 SOFT_STEPS: list[Path] = [

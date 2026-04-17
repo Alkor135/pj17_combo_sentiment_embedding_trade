@@ -1,0 +1,19 @@
+# positions.yaml — ручной override текущих позиций.
+#
+# Если строки раскомментированы — торговый скрипт использует их
+# вместо данных из quik_export/positions.json (LUA-экспорт).
+# Если всё закомментировано — берётся positions.json.
+#
+# totalnet: знаковое количество контрактов (+2 = лонг 2, -1 = шорт 1, 0 = вне рынка).
+
+# SPBFUT192yc:
+#   RIM6:
+#     totalnet: 0
+#   MXM6:
+#     totalnet: 0
+
+# SPBFUT16qg3:
+#   RIM6:
+#     totalnet: 0
+#   MXM6:
+#     totalnet: 0

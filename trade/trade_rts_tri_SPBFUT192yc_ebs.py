@@ -1,19 +1,29 @@
 """
 Исполнение сделок по фьючерсу RTS в QUIK через .tri-файлы.
-Читает комбинированный прогноз текущего дня (rts/combine_predictions.py), сравнивает с предыдущим.
-Открывает позицию в предсказанную сторону. Инверсия прогнозов уже применена на стороне
-скриптов *_to_predict.py — здесь никакой инверсии не делаем.
-Поддерживает ролловер: при смене контракта закрывает старый и открывает новый.
-Конфигурация тикеров в rts/settings.yaml (combined.predict_path), количество контрактов/путь
-к QUIK/торговый счёт в trade/settings.yaml (аккаунт ebs, ключ в имени файла).
-Защита от двойной записи через маркер state/{ticker}_{date}.done. Лог с ротацией (3 файла).
+
+Target-state модель:
+  1. Читает комбинированный прогноз текущего дня.
+  2. По сигналу вычисляет целевую позицию (up → +qty, down → -qty, skip → 0).
+  3. Из read_positions.py получает текущую позицию (тикер + количество).
+  4. Дельта = цель − текущая → пишет закрытие (противоположный ордер) + открытие (нужный ордер).
+  5. При ролловере (ticker_close ≠ ticker_open): закрывает старый, открывает новый.
+
+Поддержка ручного override позиций через trade/state/positions.yaml.
+Логирование с ротацией (3 файла). Защита от двойной записи через маркер state/{ticker}_{date}.done.
 """
 
 from pathlib import Path
 from datetime import datetime, date
 import re
 import logging
+import sys
 import yaml
+
+# --- Импорт read_positions ---
+_TRADE_DIR = Path(__file__).resolve().parent
+if str(_TRADE_DIR) not in sys.path:
+    sys.path.insert(0, str(_TRADE_DIR))
+from read_positions import get_position, get_exported_at
 
 # --- Конфигурация из rts/settings.yaml (common + combined) ---
 ticker_lc = 'rts'
@@ -35,8 +45,7 @@ ticker_open = cfg['ticker_open']
 
 account = trade_cfg['accounts']['ebs']
 trade_account = account['trade_account']
-quantity_close = str(account[ticker_lc].get('quantity_close', 1))
-quantity_open = str(account[ticker_lc].get('quantity_open', 1))
+quantity_open = int(account[ticker_lc].get('quantity_open', 1))
 
 # Пути к файлам
 predict_path = Path(cfg['predict_path'])
@@ -57,11 +66,9 @@ current_filename = today.strftime("%Y-%m-%d") + ".txt"
 current_filepath = predict_path / current_filename
 
 # --- Настройка логгирования ---
-# Имя файла лога с датой и временем запуска (один файл на запуск)
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_file = log_path / f'trade_{ticker_lc}_tri_{timestamp}.txt'
 
-# Настройка логгирования: файл + консоль
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -89,7 +96,7 @@ cleanup_old_logs(log_path, prefix=f"trade_{ticker_lc}_tri")
 # --- Вспомогательные функции ---
 def get_direction(filepath):
     """
-    Извлекает предсказание (up/down) из указанного файла.
+    Извлекает предсказание (up/down/skip) из указанного файла.
     Проверяет несколько кодировок для корректного чтения.
     """
     encodings = ['utf-8', 'cp1251']
@@ -99,7 +106,7 @@ def get_direction(filepath):
                 for line in f:
                     if "Предсказанное направление:" in line:
                         direction = line.split(":", 1)[1].strip().lower()
-                        if direction in ['up', 'down']:
+                        if direction in ['up', 'down', 'skip']:
                             return direction
             return None
         except UnicodeDecodeError:
@@ -123,62 +130,9 @@ def get_next_trans_id(trade_filepath):
             logger.error(f"Ошибка при чтении TRANS_ID из {trade_filepath}: {e}")
     return trans_id
 
-# --- Основная логика ---
-# Защита от повторной записи: один тикер + одна дата = один маркер
-done_marker = state_path / f"{ticker_lc}_{trade_account}_{today.strftime('%Y-%m-%d')}.done"
-if done_marker.exists():
-    logger.info(f"Маркер {done_marker.name} уже существует — транзакция за сегодня уже записана. Пропуск.\n")
-    exit(0)
-
-# Проверка наличия файла прогноза на сегодня
-if not current_filepath.exists() or current_filepath.stat().st_size == 0:
-    logger.info(f"Файл {current_filepath} не существует или пуст. Нет торгов.\n")
-    exit(0)
-
-# Сбор и сортировка всех .txt файлов по дате
-files = []  # Список имен всех файлов предсказаний
-for filepath in predict_path.glob("*.txt"):
-    try:
-        file_date = datetime.strptime(filepath.stem, "%Y-%m-%d").date()
-        files.append((file_date, filepath.name))
-    except ValueError:
-        continue
-
-files.sort(key=lambda x: x[0], reverse=True)  # Сортировка списка имен всех файлов с предсказаниями
-
-# Поиск текущего и предыдущего файла
-current_date = today  # Текущая дата
-prev_filename = None  # Имя файла с предыдущим предсказанием
-for i, (file_date, filename) in enumerate(files):
-    if file_date == current_date:
-        if i + 1 < len(files):
-            prev_filename = files[i + 1][1]
-        break
-
-if prev_filename is None:
-    logger.info("Предыдущий файл не найден.\n")
-    exit(0)
-
-prev_filepath = predict_path / prev_filename
-logger.info(f"Предыдущий файл предсказаний: {prev_filepath}")
-logger.info(f"Текущий файл предсказаний: {current_filepath}")
-
-# Получение направлений из текущего и предыдущего файлов
-current_predict = get_direction(current_filepath)
-prev_predict = get_direction(prev_filepath)
-
-if current_predict is None or prev_predict is None:
-    logger.warning("Не удалось найти предсказанное направление в одном или обоих файлах.\n")
-    exit(0)
-
-# --- Формирование сигнала ---
-trans_id = get_next_trans_id(trade_filepath)
-expiry_date = today.strftime("%Y%m%d")
-trade_direction = None
-trade_content = None
-
 def create_trade_block(tr_id, ticker, action, quantity):
-    """Формирует блок транзакции в зависимости от направления и инструмента."""
+    """Формирует блок транзакции QUIK .tri-файла."""
+    expiry_date = today.strftime("%Y%m%d")
     return (
         f'TRANS_ID={tr_id};'
         f'CLASSCODE=SPBFUT;'
@@ -191,67 +145,118 @@ def create_trade_block(tr_id, ticker, action, quantity):
         f'Цена=0;'
         f'Количество={quantity};'
         f'Условие исполнения=Поставить в очередь;'
-        # f'Комментарий=SPBFUT16qg3//TRI;'
         f'Комментарий={tr_id} {today.strftime("%y%m%d")};'
         f'Переносить заявку=Нет;'
         f'Дата экспирации={expiry_date};'
         f'Код внешнего пользователя=;\n'
     )
 
-# --- Логика выбора направления ---
-# Проверка на совпадение инструментов (тикеры одинаковые)
-if ticker_close == ticker_open:
-    # Условия для переворота позиций
-    if current_predict == 'up' and prev_predict == 'down':
-        trade_direction = 'BUY'
-        trade_content = (
-            create_trade_block(trans_id, ticker_close, 'Покупка', quantity_close) +
-            create_trade_block(trans_id+1, ticker_open, 'Покупка', quantity_open)
-        )
-    elif current_predict == 'down' and prev_predict == 'up':
-        trade_direction = 'SELL'
-        trade_content = (
-            create_trade_block(trans_id, ticker_close, 'Продажа', quantity_close) +
-            create_trade_block(trans_id+1, ticker_open, 'Продажа', quantity_open)
-        )
-# --- Условие ролловера (тикеры разные) ---
-elif ticker_close != ticker_open:
-    # Условия для переворота позиций во время ролловера
-    if current_predict == 'up' and prev_predict == 'down':
-        trade_direction = 'BUY'
-        trade_content = (
-                create_trade_block(trans_id, ticker_close, 'Покупка', quantity_close) +
-                create_trade_block(trans_id+1, ticker_open, 'Покупка', quantity_open)
-        )
-    elif current_predict == 'down' and prev_predict == 'up':
-        trade_direction = 'SELL'
-        trade_content = (
-                create_trade_block(trans_id, ticker_close, 'Продажа', quantity_close) +
-                create_trade_block(trans_id+1, ticker_open, 'Продажа', quantity_open)
-        )
-    # Условия для переоткрытия позиций в том же направлении по новому тикеру на ролловере
-    elif current_predict == 'up' and prev_predict == 'up':
-        trade_direction = 'BUY'
-        trade_content = (
-                create_trade_block(trans_id, ticker_close, 'Продажа', quantity_close) +
-                create_trade_block(trans_id+1, ticker_open, 'Покупка', quantity_open)
-        )
-    elif current_predict == 'down' and prev_predict == 'down':
-        trade_direction = 'SELL'
-        trade_content = (
-                create_trade_block(trans_id, ticker_close, 'Покупка', quantity_close) +
-                create_trade_block(trans_id+1, ticker_open, 'Продажа', quantity_open)
-        )
+# --- Основная логика ---
+# Защита от повторной записи: один тикер + одна дата = один маркер
+done_marker = state_path / f"{ticker_lc}_{trade_account}_{today.strftime('%Y-%m-%d')}.done"
+if done_marker.exists():
+    logger.info(f"Маркер {done_marker.name} уже существует — транзакция за сегодня уже записана. Пропуск.\n")
+    sys.exit(0)
+
+# Проверка наличия файла прогноза на сегодня
+if not current_filepath.exists() or current_filepath.stat().st_size == 0:
+    logger.info(f"Файл {current_filepath} не существует или пуст. Нет торгов.\n")
+    sys.exit(0)
+
+# Получение направления из текущего файла
+current_predict = get_direction(current_filepath)
+
+if current_predict is None:
+    logger.warning("Не удалось найти предсказанное направление в файле.\n")
+    sys.exit(0)
+
+logger.info(f"Текущее предсказание: {current_predict} (файл: {current_filepath})")
+logger.info(f"Источник позиций: LUA-экспорт из QUIK (если доступен), иначе positions.yaml")
+exported_at = get_exported_at()
+if exported_at:
+    logger.info(f"LUA-экспорт: {exported_at}")
+
+# --- Определение целевой позиции ---
+if current_predict == 'up':
+    target_position = quantity_open
+elif current_predict == 'down':
+    target_position = -quantity_open
+else:  # skip
+    target_position = 0
+
+logger.info(f"Целевая позиция: {target_position} контрактов")
+
+# --- Получение текущей позиции ---
+# Для основного контракта (ticker_open)
+current_position = get_position(trade_account, ticker_open)
+logger.info(f"Текущая позиция {ticker_open}: {current_position} контрактов")
+
+# --- Вычисление дельты и формирование заявок ---
+delta = target_position - current_position
+logger.info(f"Дельта (цель - текущая): {delta}")
+
+if delta == 0:
+    logger.info("Позиция уже в целевом состоянии. Ордеры не требуются.\n")
+    done_marker.touch()
+    sys.exit(0)
+
+# Получаем TRANS_ID для первой заявки
+trans_id = get_next_trans_id(trade_filepath)
+trade_content = ""
+
+# --- Логика: сначала закрываем, потом открываем ---
+if delta > 0:
+    # Нужно либо увеличить лонг, либо закрыть шорт
+    if current_position < 0:
+        # Сейчас в шорте — закрываем шорт противоположным ордером
+        close_qty = abs(current_position)
+        trade_content += create_trade_block(trans_id, ticker_open, 'Покупка', str(close_qty))
+        trans_id += 1
+        logger.info(f"  Закрытие шорта: Покупка {close_qty} контрактов {ticker_open}")
+
+    # Если цель > 0, открываем/добавляем лонг (только если не skip)
+    if target_position > 0:
+        open_qty = target_position - max(0, current_position)
+        if open_qty > 0:
+            trade_content += create_trade_block(trans_id, ticker_open, 'Покупка', str(open_qty))
+            logger.info(f"  Открытие лонга: Покупка {open_qty} контрактов {ticker_open}")
+
+elif delta < 0:
+    # Нужно либо увеличить шорт, либо закрыть лонг
+    if current_position > 0:
+        # Сейчас в лонге — закрываем лонг противоположным ордером
+        close_qty = current_position
+        trade_content += create_trade_block(trans_id, ticker_open, 'Продажа', str(close_qty))
+        trans_id += 1
+        logger.info(f"  Закрытие лонга: Продажа {close_qty} контрактов {ticker_open}")
+
+    # Если цель < 0, открываем/добавляем шорт (только если не skip)
+    if target_position < 0:
+        open_qty = abs(target_position) - max(0, -current_position)
+        if open_qty > 0:
+            trade_content += create_trade_block(trans_id, ticker_open, 'Продажа', str(open_qty))
+            logger.info(f"  Открытие шорта: Продажа {open_qty} контрактов {ticker_open}")
+
+# --- Ролловер: если ticker_close ≠ ticker_open, закрываем позицию в старом контракте ---
+if ticker_close != ticker_open:
+    old_position = get_position(trade_account, ticker_close)
+    if old_position != 0:
+        trans_id += 1
+        close_qty = abs(old_position)
+        if old_position > 0:
+            action = 'Продажа'
+        else:
+            action = 'Покупка'
+        trade_content += create_trade_block(trans_id, ticker_close, action, str(close_qty))
+        logger.info(f"  Ролловер: закрытие позиции {old_position} контрактов {ticker_close} ({action})")
 
 # --- Запись результата ---
 if trade_content:
     with trade_filepath.open('a', encoding='cp1251') as f:
         f.write(trade_content)
     done_marker.touch()
-    logger.info(f'{prev_predict=}, {current_predict=}')
-    logger.info(f"Добавлена транзакция {trade_direction} с TRANS_ID={trans_id} в файл {trade_filepath}.")
-    logger.info(f"Добавлена транзакция {trade_direction} с TRANS_ID={trans_id+1} в файл {trade_filepath}.\n")
+    logger.info(f"\nДобавлены заявки в файл {trade_filepath}.")
+    logger.info(f"Сигнал: {current_predict}, переход {current_position} → {target_position}\n")
 else:
-    logger.info(
-        f"На {today} условия для сигналов BUY или SELL не выполнены. "
-        f"{prev_predict=}, {current_predict=}\n")
+    logger.info(f"На {today} никакие ордеры не требуются. Позиция уже совпадает с целью.\n")
+    done_marker.touch()

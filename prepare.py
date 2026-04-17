@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-LOG_DIR = ROOT / "rts" / "log"
+LOG_DIR = ROOT / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -62,15 +62,20 @@ def main() -> int:
 
     # Пути для удаления
     files_to_delete = [
-        ROOT / "rts" / "combined" / f"{today_str}.txt",
         Path("C:/Users/Alkor/gd/predict_ai/rts_embedding") / f"{today_str}.txt",
         Path("C:/Users/Alkor/gd/predict_ai/rts_sentiment") / f"{today_str}.txt",
         Path("C:/Users/Alkor/gd/predict_ai/rts_combined") / f"{today_str}.txt",
+
+        Path("C:/Users/Alkor/gd/predict_ai/mix_embedding") / f"{today_str}.txt",
+        Path("C:/Users/Alkor/gd/predict_ai/mix_sentiment") / f"{today_str}.txt",
+        Path("C:/Users/Alkor/gd/predict_ai/mix_combined") / f"{today_str}.txt",
     ]
 
     done_markers = [
         ROOT / "trade" / "state" / f"rts_SPBFUT192yc_{today_str}.done",
         ROOT / "trade" / "state" / f"rts_SPBFUT16qg3_{today_str}.done",
+        ROOT / "trade" / "state" / f"mix_SPBFUT192yc_{today_str}.done",
+        ROOT / "trade" / "state" / f"mix_SPBFUT16qg3_{today_str}.done",
     ]
 
     all_files = files_to_delete + done_markers

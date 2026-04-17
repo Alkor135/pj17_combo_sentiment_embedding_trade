@@ -1,19 +1,20 @@
 """
 Оркестратор pj17 для ежедневного запуска из Windows Task Scheduler в 21:00:05.
 
-Порядок подобран так, чтобы .tri попал в QUIK максимально рано, а аналитика шла в хвосте:
+Обрабатывает два тикера (RTS и MIX). Каждый этап выполняется парой RTS → MIX,
+чтобы оба .tri попали в QUIK с минимальным зазором между ними:
   0) prepare.py (удаляет тестовые результаты, если запуск до 21:00)
   1) beget/sync_files.py
-  2) rts/shared: download_minutes_to_db, convert_minutes_to_days, create_markdown_files
-  3) rts/embedding: create_embedding, embedding_backtest, embedding_to_predict (пишет инвертир.)
-  4) rts/sentiment: sentiment_analysis, sentiment_to_predict
-  5) rts/combine_predictions.py (согласованное голосование)
-  6) trade/trade_rts_tri_SPBFUT192yc_ebs.py  ← критично по времени
+  2) shared: download_minutes_to_db → convert_minutes_to_days → create_markdown_files  (RTS, MIX)
+  3) embedding: create_embedding → embedding_backtest → embedding_to_predict (инверсия) (RTS, MIX)
+  4) sentiment: sentiment_analysis → sentiment_to_predict                                (RTS, MIX)
+  5) combine_predictions.py — согласованное голосование                                  (RTS, MIX)
+  6) trade/trade_rts_tri_SPBFUT192yc_ebs.py  +  trade/trade_mix_tri_SPBFUT192yc_ebs.py  ← встык, критично по времени
   7) Аналитика (soft-fail): embedding_analysis, sentiment_group_stats, sentiment_backtest,
-     sentiment_compare (идёт последним).
+     sentiment_compare — по обоим тикерам; sentiment_compare MIX идёт последним.
 
-Hard-fail (exit с кодом ошибки) до и включая trade-скрипт — чтобы при сбое на торговом этапе
-сразу поднять алерт. После trade-скрипта ошибки — warning, пайплайн продолжается.
+Hard-fail (exit с кодом ошибки) до и включая trade-скрипты — чтобы при сбое на торговом
+этапе сразу поднять алерт. После trade-скриптов ошибки — warning, пайплайн продолжается.
 
 Регистрация в планировщике Windows:
   schtasks /Create /SC DAILY /ST 21:00:05 /TN "pj17_run_all" ^
@@ -29,7 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-LOG_DIR = ROOT / "rts" / "log"
+LOG_DIR = ROOT / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -56,23 +57,60 @@ for old in sorted(LOG_DIR.glob("run_all_*.txt"))[:-3]:
 HARD_STEPS: list[Path] = [
     ROOT / "prepare.py",  # удаление тестовых файлов, если запуск до 21:00:00 (защита рабочих результатов)
     ROOT / "beget" / "sync_files.py",  # синхронизация файлов с удалённого сервера (включая .tri для QUIK)
-    ROOT / "rts" / "shared" / "download_minutes_to_db.py",  # загрузка минутных данных в БД (для последующей обработки)
-    ROOT / "rts" / "shared" / "convert_minutes_to_days.py",  # агрегация минутных данных в дневные (для обучения эмбеддингов)
-    ROOT / "rts" / "shared" / "create_markdown_files.py",  # создание .md файлов с текстами для эмбеддингов и сентимента
-    ROOT / "rts" / "embedding" / "create_embedding.py",  # обучение эмбеддингов и сохранение в БД
-    ROOT / "rts" / "embedding" / "embedding_backtest.py",  # бэктест эмбеддингов на исторических данных
-    ROOT / "rts" / "embedding" / "embedding_to_predict.py",  # преобразование эмбеддингов в предикты (инвертир. для удобства)
-    ROOT / "rts" / "sentiment" / "sentiment_analysis.py",  # анализ сентимента с помощью LLM и сохранение в БД
-    ROOT / "rts" / "sentiment" / "sentiment_to_predict.py",  # преобразование сентимента в предикты (без инвертирования, т.к. уже в нужной форме)
-    ROOT / "rts" / "combine_predictions.py",  # согласованное голосование между эмбеддингами и сентиментом для получения финального сигнала
-    ROOT / "trade" / "trade_rts_tri_SPBFUT192yc_ebs.py",  # торговый скрипт, который читает финальный сигнал и выставляет .tri в QUIK (критично по времени)
+
+    # Этап 1: загрузка минутных котировок в БД (у каждого тикера своя БД)
+    ROOT / "rts" / "shared" / "download_minutes_to_db.py",
+    ROOT / "mix" / "shared" / "download_minutes_to_db.py",
+
+    # Этап 2: агрегация минут → дневные свечи
+    ROOT / "rts" / "shared" / "convert_minutes_to_days.py",
+    ROOT / "mix" / "shared" / "convert_minutes_to_days.py",
+
+    # Этап 3: markdown-сводки новостей по торговым сессиям
+    ROOT / "rts" / "shared" / "create_markdown_files.py",
+    ROOT / "mix" / "shared" / "create_markdown_files.py",
+
+    # Этап 4: эмбеддинги (тяжёлый — Ollama)
+    ROOT / "rts" / "embedding" / "create_embedding.py",
+    ROOT / "mix" / "embedding" / "create_embedding.py",
+
+    # Этап 5: бэктест эмбеддингов + выбор лучшего k
+    ROOT / "rts" / "embedding" / "embedding_backtest.py",
+    ROOT / "mix" / "embedding" / "embedding_backtest.py",
+
+    # Этап 6: прогноз эмбеддингов на сегодня (с инверсией)
+    ROOT / "rts" / "embedding" / "embedding_to_predict.py",
+    ROOT / "mix" / "embedding" / "embedding_to_predict.py",
+
+    # Этап 7: sentiment-анализ через LLM (тяжёлый — Ollama)
+    ROOT / "rts" / "sentiment" / "sentiment_analysis.py",
+    ROOT / "mix" / "sentiment" / "sentiment_analysis.py",
+
+    # Этап 8: прогноз sentiment на сегодня (по rules.yaml)
+    ROOT / "rts" / "sentiment" / "sentiment_to_predict.py",
+    ROOT / "mix" / "sentiment" / "sentiment_to_predict.py",
+
+    # Этап 9: согласованное голосование → combined-прогноз
+    ROOT / "rts" / "combine_predictions.py",
+    ROOT / "mix" / "combine_predictions.py",
+
+    # Этап 10: торговые скрипты встык — оба .tri попадают в QUIK с минимальным лагом
+    ROOT / "trade" / "trade_rts_tri_SPBFUT192yc_ebs.py",
+    ROOT / "trade" / "trade_mix_tri_SPBFUT192yc_ebs.py",
 ]
 
 SOFT_STEPS: list[Path] = [
     ROOT / "rts" / "embedding" / "embedding_analysis.py",
+    ROOT / "mix" / "embedding" / "embedding_analysis.py",
+
     ROOT / "rts" / "sentiment" / "sentiment_group_stats.py",
+    ROOT / "mix" / "sentiment" / "sentiment_group_stats.py",
+
     ROOT / "rts" / "sentiment" / "sentiment_backtest.py",
-    ROOT / "rts" / "sentiment" / "sentiment_compare.py",  # последний
+    ROOT / "mix" / "sentiment" / "sentiment_backtest.py",
+
+    ROOT / "rts" / "sentiment" / "sentiment_compare.py",
+    ROOT / "mix" / "sentiment" / "sentiment_compare.py",  # последний
 ]
 
 

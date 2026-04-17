@@ -219,7 +219,22 @@ rts/*.xlsx
 rts/embedding/*.xlsx
 rts/sentiment/*.xlsx
 
+mix/group_stats/*
+mix/log/*
+mix/embedding/log/*
+mix/sentiment/log/*
+mix/plots/*
+mix/*.pkl
+mix/embedding/*.pkl
+mix/sentiment/*.pkl
+mix/*.xlsx
+mix/embedding/*.xlsx
+mix/sentiment/*.xlsx
+
 trade/quik_export/*.csv
 trade/quik_export/*.json
 trade/state/*.done
 trade/log/*
+
+log/
+.claude/

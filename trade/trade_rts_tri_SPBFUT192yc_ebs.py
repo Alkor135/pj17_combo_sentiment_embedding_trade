@@ -51,8 +51,8 @@ quantity_open = int(account[ticker_lc].get('quantity_open', 1))
 predict_path = Path(cfg['predict_path'])
 log_path = Path(__file__).parent / "log"
 trade_path = Path(account['trade_path'])
-# trade_filepath = trade_path / "input.tri"
-trade_filepath = trade_path / "test.tri"
+trade_filepath = trade_path / "input.tri"
+# trade_filepath = trade_path / "test.tri"  # Для тестирования без реального QUIK (пишет в test.tri вместо input.tri)
 
 # Создание необходимых директорий
 trade_path.mkdir(parents=True, exist_ok=True)

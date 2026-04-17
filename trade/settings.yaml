@@ -24,4 +24,4 @@ accounts:
       quantity_open: 2
     mix:
       quantity_close: 1
-      quantity_open: 1
+      quantity_open: 2

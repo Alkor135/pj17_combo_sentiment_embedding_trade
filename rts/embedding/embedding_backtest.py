@@ -6,7 +6,7 @@
 Выбирает лучшее k по скользящей сумме P/L за test_days дней.
 Применяет зеркальное отображение P/L (инверсия стратегии).
 Строит график кумулятивного P/L с наложенной диаграммой лучших k.
-Сохраняет результаты в Excel и explain-данные в pickle.
+Сохраняет результаты в Excel.
 Предсказание на следующую сессию формирует отдельный скрипт embedding_to_predict.py.
 Конфигурация через rts/settings.yaml (секция embedding), логирование с ротацией (3 файла).
 """
@@ -32,7 +32,6 @@ for _k, _v in list(settings.items()):
         settings[_k] = _v.replace("{ticker}", _ticker).replace("{ticker_lc}", _ticker_lc)
 
 _CHUNK_MATRIX_CACHE = {}  # Кэш для матриц чанков
-EXPLAIN_STORE = {}  # { k -> [ { trade_date, best_j_date, score, pairs, body_cur, body_prev } ] }
 
 # ==== Параметры ====
 ticker = settings['ticker']
@@ -134,61 +133,6 @@ def chunks_similarity_fast(
     top = np.partition(flat, -top_k)[-top_k:]
     return float(top.mean())
 
-def chunks_similarity_with_explain(
-    chunks_a: list,
-    chunks_b: list,
-    top_k: int = 5
-):
-    """
-    Возвращает (score, pairs) где pairs — список топ-k совпадений:
-    [{"chunk_a": idx_a, "chunk_b": idx_b, "similarity": float,
-      "text_a": "...", "text_b": "..."}...]
-    Использует матричную операцию, быстро.
-    """
-    if not chunks_a or not chunks_b:
-        return 0.0, []
-
-    A = chunks_to_matrix(chunks_a)  # (Na, D)
-    B = chunks_to_matrix(chunks_b)  # (Nb, D)
-
-    S = A @ B.T  # (Na, Nb)
-
-    flat = S.ravel()
-    total = flat.size
-    k = min(top_k, total)
-
-    if total == 0:
-        return 0.0, []
-
-    # get indices of top-k in flattened array
-    if total <= k:
-        top_idx = np.arange(total)
-    else:
-        top_idx = np.argpartition(flat, -k)[-k:]
-
-    # build readable pairs
-    Nb = B.shape[0]
-    pairs = []
-    # sort top_idx by actual similarity descending for readability
-    top_idx_sorted = top_idx[np.argsort(flat[top_idx])[::-1]]
-
-    for idx in top_idx_sorted:
-        ia = int(idx // Nb)
-        ib = int(idx % Nb)
-        sim = float(S[ia, ib])
-        text_a = chunks_a[ia].get("text", "") if isinstance(chunks_a[ia], dict) else ""
-        text_b = chunks_b[ib].get("text", "") if isinstance(chunks_b[ib], dict) else ""
-        pairs.append({
-            "chunk_a": ia,
-            "chunk_b": ib,
-            "similarity": sim,
-            "text_a": text_a,
-            "text_b": text_b
-        })
-
-    score = float(np.mean([p["similarity"] for p in pairs])) if pairs else 0.0
-    return score, pairs
-
 def compute_max_k(
     df: pd.DataFrame,
     start_date: pd.Timestamp,
@@ -202,9 +146,6 @@ def compute_max_k(
 
     dates = df.index
     start_pos = dates.get_loc(start_date)
-
-    # ensure explain list exists for this k
-    EXPLAIN_STORE.setdefault(k, [])
 
     for i in range(start_pos, len(df)):
         if i < k:
@@ -234,28 +175,6 @@ def compute_max_k(
         best_j = indices[best_idx]
         body_prev = df.iloc[best_j][col_body]
 
-        # --- записываем explain только для выбранного best_j ---
-        try:
-            score, pairs = chunks_similarity_with_explain(
-                chunks_cur,
-                df.iloc[best_j][col_chunks],
-                top_k=top_k_chunks
-            )
-        except Exception as e:
-            logging.error(f"Ошибка при формировании explain для {dates[i]} vs {dates[best_j]}: {e}")
-            score, pairs = similarities[best_idx], []
-
-        EXPLAIN_STORE[k].append({
-            "trade_date": dates[i],
-            "best_j_date": dates[best_j],
-            "score": float(similarities[best_idx]),
-            "explained_score": float(score),
-            "pairs": pairs,
-            "body_cur": float(body_cur),
-            "body_prev": float(body_prev)
-        })
-        # --------------------------------------------------------
-
         if np.sign(body_cur) == np.sign(body_prev):
             result.iloc[i] = abs(body_cur)
         else:
@@ -280,28 +199,6 @@ def main(path_db_day, cache_file):
             start_date=start_date,
             k=k
         )
-
-    # --- Сохраняем explain-результаты в pickle для дальнейшего анализа ---
-    explain_dir = cache_file.parent
-    explain_path = explain_dir / f"explain_topk_all.pkl"  # _{timestamp}
-    try:
-        with open(explain_path, "wb") as ef:
-            pickle.dump(EXPLAIN_STORE, ef)
-        logging.info(f"🔍 Explain saved: {explain_path}")
-    except Exception as e:
-        logging.error(f"Не удалось сохранить explain: {e}")
-
-    # debug: показать примеры explain для k=5, если есть
-    example_k = 5
-    if example_k in EXPLAIN_STORE and EXPLAIN_STORE[example_k]:
-        sample = EXPLAIN_STORE[example_k][-1]  # последний рассчитанный день
-        logging.info(
-            f"Пример explain для k={example_k}: trade_date={sample['trade_date']}, "
-            f"best_j={sample['best_j_date']}, score={sample['score']}")
-        for p in sample["pairs"][:5]:
-            logging.info(
-                f"  sim={p['similarity']:.4f} | A[{p['chunk_a']}]='{p['text_a'][:120]}' -> "
-                f"B[{p['chunk_b']}]='{p['text_b'][:120]}'")
 
     # === Замена NaN на 0.0 во всех MAX_ колонках ===
     max_cols = [f"MAX_{k}" for k in range(3, 31)]
@@ -407,7 +304,7 @@ def main(path_db_day, cache_file):
     # ---------------------------------------------------
 
     # Сохранение DataFrame в Excel файл (уже с инверсией P/L)
-    df_rez.to_excel(Path(__file__).parent / 'df_rez_output.xlsx', index=True)
+    df_rez.to_excel(Path(__file__).parent / 'embedding_backtest_results.xlsx', index=True)
 
     # ===============================
     # График cumulative P/L + наложенная столбчатая диаграмма max

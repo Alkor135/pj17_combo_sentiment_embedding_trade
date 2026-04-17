@@ -15,8 +15,8 @@ from plotly.subplots import make_subplots
 TICKER_DIR = Path(__file__).resolve().parents[1]
 
 # --- Пути к файлам ---
-SENTIMENT_XLSX = TICKER_DIR / "sentiment_backtest_results.xlsx"
-EMBEDDING_XLSX = TICKER_DIR / "embedding" / "df_rez_output.xlsx"
+SENTIMENT_XLSX = TICKER_DIR / "sentiment" / "sentiment_backtest_results.xlsx"
+EMBEDDING_XLSX = TICKER_DIR / "embedding" / "embedding_backtest_results.xlsx"
 OUTPUT_HTML = TICKER_DIR / "plots" / "compare_strategies.html"
 
 # --- Загрузка данных ---

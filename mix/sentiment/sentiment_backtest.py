@@ -661,7 +661,7 @@ def main(
 
     report_folder = TICKER_DIR / "plots"
     output_html = report_folder / "sentiment_backtest.html"
-    output_xlsx = TICKER_DIR / "sentiment_backtest_results.xlsx"
+    output_xlsx = TICKER_DIR / "sentiment" / "sentiment_backtest_results.xlsx"
     result.to_excel(output_xlsx, index=False)
     build_report(result, ticker, output_html, rules_yaml)
 

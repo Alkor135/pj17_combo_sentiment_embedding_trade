@@ -1,5 +1,5 @@
 """
-Интерактивный анализ стратегии на основе df_rez_output.xlsx (Plotly).
+Интерактивный анализ стратегии на основе embedding_backtest_results.xlsx (Plotly).
 Генерирует HTML-файл с графиками: дневной/недельный/месячный/годовой P/L,
 накопленная прибыль, распределение P/L, drawdown, скользящие средние.
 Таблицы: статистика стратегии и ключевые коэффициенты.
@@ -28,7 +28,7 @@ model_name = settings.get("model_name", "embeddinggemma")
 provider = settings.get("provider", "")
 
 SAVE_PATH = TICKER_DIR
-INPUT_FILE = Path(__file__).parent / "df_rez_output.xlsx"
+INPUT_FILE = Path(__file__).parent / "embedding_backtest_results.xlsx"
 
 # ── Загрузка данных ──────────────────────────────────────────────────────
 df = pd.read_excel(INPUT_FILE)
@@ -307,7 +307,7 @@ fig.update_layout(
     height=2200,
     width=1500,
     title_text=(
-        f"{ticker} Strategy Analysis — {model_name} / {provider}"
+        f"{ticker}: embedding backtest — {model_name} / {provider}"
         f"<br><sub>{stats_text}</sub>"
     ),
     title_x=0.5,
@@ -508,13 +508,13 @@ fig_table.update_layout(
 )
 
 # ── Сохранение в HTML ────────────────────────────────────────────────────
-output = SAVE_PATH / "plots" / "strategy_analysis.html"
+output = SAVE_PATH / "plots" / "embedding_backtest.html"
 
 charts_html = fig.to_html(include_plotlyjs="cdn", full_html=False)
 
 with open(output, "w", encoding="utf-8") as f:
     f.write("<!DOCTYPE html>\n<html><head><meta charset='utf-8'>\n")
-    f.write(f"<title>{ticker} Strategy Analysis</title>\n</head><body>\n")
+    f.write(f"<title>{ticker} embedding backtest</title>\n</head><body>\n")
     f.write(charts_html)
     f.write("\n<hr style='margin:30px 0; border:1px solid #ccc'>\n")
     f.write(fig_stats.to_html(include_plotlyjs=False, full_html=False))

@@ -1,15 +1,15 @@
 """
 Формирует файл предсказания направления для следующей торговой сессии на основе эмбеддингов новостей.
 
-Использует cache_file (эмбеддинги) и df_rez_output.xlsx (выбранное k на каждую дату из embedding_backtest.py).
+Использует cache_file (эмбеддинги) и embedding_backtest_results.xlsx (выбранное k на каждую дату из embedding_backtest.py).
 Для последней даты из кэша эмбеддингов:
-  1) Берёт best k из df_rez_output.xlsx (колонка 'max' последней строки).
+  1) Берёт best k из embedding_backtest_results.xlsx (колонка 'max' последней строки).
   2) Считает косинусное сходство чанков текущей сессии с каждой из k предыдущих.
   3) Для наиболее похожей исторической сессии берёт её NEXT_OPEN_TO_OPEN.
-  4) Направление raw = sign(body_prev): > 0 → "up", < 0 → "down", == 0 → skip.
-  5) Если settings['invert_signal'] == true — инвертирует (up↔down).
-Пишет <predict_path>/YYYY-MM-DD.txt (YYYY-MM-DD — дата только что закрывшейся сессии).
-Если файл за эту дату уже есть — пропуск. На skip файл не создаётся.
+  4) Направление raw = sign(open_to_open_next): > 0 → "up", < 0 → "down", == 0 или NaN → "skip".
+  5) Если settings['invert_signal'] == true — инвертирует (up↔down); skip остаётся skip.
+Пишет <predict_path>/YYYY-MM-DD.txt (YYYY-MM-DD — дата только что закрывшейся сессии) ВСЕГДА,
+включая случай skip (для ручного контроля). Если файл за эту дату уже есть — пропуск.
 """
 
 from __future__ import annotations
@@ -110,13 +110,13 @@ def read_best_k(xlsx_path: Path) -> int:
 
 
 def main() -> int:
-    xlsx_path = Path(__file__).parent / "df_rez_output.xlsx"
+    xlsx_path = Path(__file__).parent / "embedding_backtest_results.xlsx"
     if not xlsx_path.exists():
         logging.error(f"Нет {xlsx_path} — запусти embedding_backtest.py перед предсказанием.")
         return 1
 
     best_k = read_best_k(xlsx_path)
-    logging.info(f"Best k из df_rez_output.xlsx: {best_k}")
+    logging.info(f"Best k из embedding_backtest_results.xlsx: {best_k}")
 
     df_bar = load_quotes(path_db_day)
     df_emb = load_cache(cache_file)
@@ -150,21 +150,28 @@ def main() -> int:
         logging.error("Не удалось найти похожий день.")
         return 1
 
-    body_prev = df.iloc[best_j]["NEXT_OPEN_TO_OPEN"]
+    # open_to_open_next — NEXT_OPEN_TO_OPEN выбранного исторически похожего дня best_j:
+    # разница OPEN послеследующей и следующей сессий (OPEN[j+2] - OPEN[j+1]),
+    # т.е. движение OPEN→OPEN сессии, наступившей после похожего дня.
+    # Знак задаёт прогноз направления: >0 → up, <0 → down, 0/NaN → skip.
+    open_to_open_next = df.iloc[best_j]["NEXT_OPEN_TO_OPEN"]
     best_date = df.index[best_j].strftime("%Y-%m-%d")
     logging.info(
-        f"prediction_date={date_str}, best_j={best_date}, sim={best_sim:.4f}, body_prev={body_prev}"
+        f"prediction_date={date_str}, best_j={best_date}, sim={best_sim:.4f}, open_to_open_next={open_to_open_next}"
     )
 
-    if pd.isna(body_prev) or body_prev == 0:
-        logging.info("body_prev пустой/нулевой — skip, файл не создаётся.")
-        return 0
-
-    raw_direction = "up" if body_prev > 0 else "down"
-    if invert_signal:
-        direction = "down" if raw_direction == "up" else "up"
+    if pd.isna(open_to_open_next) or open_to_open_next == 0:
+        raw_direction = "skip"
+        direction = "skip"
+        open_to_open_next_label = "n/a" if pd.isna(open_to_open_next) else f"{open_to_open_next:.2f}"
+        logging.info("open_to_open_next пустой/нулевой — direction=skip.")
     else:
-        direction = raw_direction
+        raw_direction = "up" if open_to_open_next > 0 else "down"
+        if invert_signal:
+            direction = "down" if raw_direction == "up" else "up"
+        else:
+            direction = raw_direction
+        open_to_open_next_label = f"{open_to_open_next:.2f}"
 
     logging.info(
         f"raw={raw_direction}, invert_signal={invert_signal}, итог={direction}"
@@ -175,7 +182,8 @@ def main() -> int:
         f"Best k: {best_k}\n"
         f"Похожий день: {best_date}\n"
         f"Similarity: {best_sim:.4f}\n"
-        f"body_prev: {body_prev:.2f}\n"
+        f"open_to_open_next: {open_to_open_next_label}\n"
+        f"(open_to_open_next — движение OPEN→OPEN сессии, наступившей после похожего дня; знак задаёт прогноз: >0 → up, <0 → down, 0/NaN → skip)\n"
         f"Invert signal: {invert_signal}\n"
         f"Предсказанное направление: {direction}\n"
     )

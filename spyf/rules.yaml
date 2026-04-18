@@ -26,8 +26,8 @@
 
 rules:  # По датам с 2025-09-26 до 2026-04-05 на детерминированной модели gemma3:12B
   - {min: -10, max: -6, action: follow}
-  - {min: -5,  max: -3, action: invert}
-  - {min: -2,  max:  2, action: follow}
-  - {min:  3,  max:  5, action: invert}
-  - {min:  6,  max:  7, action: follow}
+  - {min: -5,  max: -5, action: invert}
+  - {min: -4,  max:  2, action: follow}
+  - {min:  3,  max:  4, action: invert}
+  - {min:  5,  max:  7, action: follow}
   - {min:  8,  max: 10, action: invert}

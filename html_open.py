@@ -1,6 +1,6 @@
 """
-Открывает HTML-отчёты pj17 и mix в новом окне Google Chrome.
-Собирает все html-файлы из rts/plots/ и mix/plots/ и открывает их одной командой.
+Открывает HTML-отчёты проекта pj17 в новом окне Google Chrome.
+Собирает все html-файлы из rts/plots/ и mix/plots/ и других папок и открывает их одной командой.
 """
 
 import subprocess
@@ -10,6 +10,11 @@ ROOT = Path(__file__).resolve().parent
 PLOTS_DIRS = [
     ROOT / "rts" / "plots",
     ROOT / "mix" / "plots",
+    ROOT / "br" / "plots",
+    ROOT / "ng" / "plots",
+    ROOT / "si" / "plots",
+    ROOT / "gold" / "plots",
+    ROOT / "spyf" / "plots",
 ]
 
 files = []

@@ -5,7 +5,7 @@
 чтобы оба .tri попали в QUIK с минимальным зазором между ними:
   0) prepare.py (удаляет тестовые результаты, если запуск до 21:00)
   1) beget/sync_files.py
-  2) shared: download_minutes_to_db → convert_minutes_to_days → create_markdown_files  (RTS, MIX)
+  2) shared: download_minutes_to_db → convert_minutes_to_days (RTS, MIX); create_markdown_files (только RTS — md_path общий)
   3) embedding: create_embedding → embedding_backtest → embedding_to_predict (инверсия) (RTS, MIX)
   4) sentiment: sentiment_analysis → sentiment_to_predict                                (RTS, MIX)
   5) combine_predictions.py — согласованное голосование                                  (RTS, MIX)
@@ -66,9 +66,8 @@ HARD_STEPS: list[Path] = [
     ROOT / "rts" / "shared" / "convert_minutes_to_days.py",
     ROOT / "mix" / "shared" / "convert_minutes_to_days.py",
 
-    # Этап 3: markdown-сводки новостей по торговым сессиям
+    # Этап 3: markdown-сводки новостей по торговым сессиям (md_path общий, второй вызов избыточен)
     ROOT / "rts" / "shared" / "create_markdown_files.py",
-    ROOT / "mix" / "shared" / "create_markdown_files.py",
 
     # Этап 4: эмбеддинги (тяжёлый — Ollama)
     ROOT / "rts" / "embedding" / "create_embedding.py",

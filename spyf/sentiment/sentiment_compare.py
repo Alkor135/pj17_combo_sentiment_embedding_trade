@@ -2,7 +2,7 @@
 Сравнение двух стратегий (sentiment vs embedding) по результатам их бэктестов.
 Строит HTML-отчёт: три equity-кривые (каждая стратегия + комбинация),
 подробный отчёт по комбинированной стратегии (P/L по сделкам, недели, месяцы,
-drawdown, распределение, скользящие средние, таблицы статистики и коэффициентов).
+drawdown, распределение, таблицы статистики и коэффициентов).
 """
 
 from pathlib import Path
@@ -175,12 +175,9 @@ month_colors = ["#d32f2f" if v < 0 else "#1565c0" for v in monthly["pnl_combined
 running_max = cum.cummax()
 drawdown = cum - running_max
 
-for w in (5, 10, 20):
-    merged[f"MA{w}"] = pl.rolling(w, min_periods=1).mean()
-
 # ── Метрики ──
 total_profit = float(cum.iloc[-1])
-total_trades = len(merged)
+total_trades = int((pl != 0).sum())
 win_trades = int((pl > 0).sum())
 loss_trades = int((pl < 0).sum())
 win_rate = win_trades / max(total_trades, 1) * 100
@@ -225,7 +222,7 @@ stats_text = (
 
 # ── Графики комбинации ──
 fig = make_subplots(
-    rows=4, cols=2,
+    rows=3, cols=2,
     subplot_titles=(
         "P/L по сделкам",
         "Накопленная прибыль (equity)",
@@ -233,16 +230,13 @@ fig = make_subplots(
         "P/L по месяцам",
         "Drawdown от максимума",
         "Распределение P/L сделок",
-        "Скользящие средние P/L (5/10/20)",
-        "",
     ),
     specs=[
         [{"type": "bar"}, {"type": "scatter"}],
         [{"type": "bar"}, {"type": "bar"}],
         [{"type": "scatter"}, {"type": "histogram"}],
-        [{"type": "scatter"}, {}],
     ],
-    vertical_spacing=0.07,
+    vertical_spacing=0.09,
     horizontal_spacing=0.08,
 )
 
@@ -304,20 +298,8 @@ fig.add_trace(
     go.Histogram(x=pl_neg, marker_color="#d32f2f", opacity=0.7, name="Убыток", nbinsx=20),
     row=3, col=2,
 )
-for w, color in [(5, "#1565c0"), (10, "#ff6f00"), (20, "#7b1fa2")]:
-    fig.add_trace(
-        go.Scatter(
-            x=merged["date"], y=merged[f"MA{w}"],
-            mode="lines", line=dict(color=color, width=1.5),
-            name=f"MA{w}",
-            hovertemplate=f"MA{w}: " + "%{y:,.0f}<extra></extra>",
-        ),
-        row=4, col=1,
-    )
-fig.add_hline(y=0, line_dash="dash", line_color="gray", row=4, col=1)
-
 fig.update_layout(
-    height=1800, width=1500,
+    height=1400, width=1500,
     title_text=f"Комбинированная стратегия — SPYF<br><sub>{stats_text}</sub>",
     title_x=0.5,
     showlegend=True,
@@ -325,7 +307,7 @@ fig.update_layout(
     template="plotly_white",
     hovermode="x unified",
 )
-for r, c in [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1), (4, 1)]:
+for r, c in [(1, 1), (1, 2), (2, 1), (2, 2), (3, 1)]:
     fig.update_yaxes(tickformat=",", row=r, col=c)
 
 # ── Таблица статистики ──

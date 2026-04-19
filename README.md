@@ -32,10 +32,15 @@ schtasks /Create /SC DAILY /ST 21:00:05 /TN "pj17_run_all" ^
 
 ## Структура
 
-- `run_all.py` — оркестратор, точка входа.
+- `run_all.py` — основной оркестратор (RTS + MIX), точка входа для ежедневного запуска.
+- `run_other.py` — оркестратор «не основных» тикеров (BR, GOLD, NG, Si, SPYF) —
+  только бэктест и аналитика, без торговли.
+- `run_report.py` — оркестратор построения HTML-отчётов поверх уже готовых
+  минуток/дневок/md (этапы 4–9 hard-fail, торговые скрипты не запускаются).
 - `prepare.py` — очистка сегодняшних прогнозов и done-маркеров при тестовом
-  прогоне до 21:00, плюс housekeeping `trade/state/*.done`: хранит не более
-  10 календарных дней, и в любом случае не более 10 файлов.
+  прогоне до 21:00, плюс housekeeping: `trade/state/*.done` (хранит не более
+  10 календарных дней и не более 10 файлов) и `log/prepare_*.txt` (оставляет
+  3 самых свежих).
 - `beget/` — сбор RSS-новостей с удалённого сервера.
 - `rts/`, `mix/` — ветки по тикерам, каждая самодостаточна:
   - `settings.yaml` — единый конфиг с секциями `common / embedding / sentiment /
@@ -51,6 +56,10 @@ schtasks /Create /SC DAILY /ST 21:00:05 /TN "pj17_run_all" ^
   - `quik_export_*.lua` — минутные котировки и позиции из QUIK.
   - `settings.yaml` — мульти-счёт (`accounts.iis`, `accounts.ebs`).
 - `html_open.py` — открытие всех HTML-отчётов в Chrome одним окном.
+- `buhinvest_analize/` — анализ реального P/L из выгрузки брокера Buhinvest
+  (XLSX → PNG/HTML). Независимо от торгового пайплайна.
+- `tests/` — unit-тесты (`prepare.py`, `buhinvest_reports.py`).
+- `log/` — логи корневых оркестраторов (`run_all`, `run_other`, `run_report`, `prepare`).
 - `requirements.txt` — зависимости обоих пайплайнов.
 
 ## Установка

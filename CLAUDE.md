@@ -72,11 +72,17 @@ pj17_combo_sentiment_embedding_trade/
 │   ├── quik_export/                    # minutes.csv + positions.json от lua-экспортёров
 │   ├── state/                          # *.done маркеры + positions.yaml (ручной override)
 │   └── log/
-├── prepare.py                          # очистка сегодняшних результатов при тестовом запуске (до 21:00) + retention .done
-├── run_all.py                          # оркестратор (Task Scheduler, 21:00:05)
+├── prepare.py                          # очистка сегодняшних результатов при тестовом запуске (до 21:00) + retention .done + housekeeping log/prepare_*.txt (3 самых свежих)
+├── run_all.py                          # основной оркестратор RTS+MIX (Task Scheduler, 21:00:05)
+├── run_other.py                        # оркестратор «не основных» тикеров (BR, GOLD, NG, Si, SPYF) — только бэктест/аналитика
+├── run_report.py                       # оркестратор HTML-отчётов поверх готовых минуток/дневок/md (без торговли)
 ├── html_open.py                        # открывает rts/plots/*.html + mix/plots/*.html в Chrome
+├── buhinvest_analize/                  # анализ реального P/L из выгрузки брокера Buhinvest (XLSX → PNG/HTML)
+├── tests/                              # unit-тесты (prepare.py, buhinvest_reports.py)
+├── log/                                # логи корневых оркестраторов (run_all, run_other, run_report, prepare)
 ├── requirements.txt
 ├── CLAUDE.md
+├── AGENTS.md
 └── README.md
 ```
 
@@ -151,9 +157,16 @@ accounts:
 за сегодня: файлы прогнозов (`<ticker>_embedding`, `<ticker>_sentiment`,
 `<ticker>_combined`) и done-маркеры `trade/state/*.done`. Это позволяет
 перезапустить пайплайн днём без лишних «уже существует — пропуск». Дополнительно
-он всегда делает housekeeping `trade/state/*.done`: хранит не более 10
-календарных дней истории и не более 10 файлов. После 21:00:00 скрипт не трогает
-сегодняшние рабочие результаты — это защита официального ночного запуска.
+он всегда делает housekeeping: (а) `trade/state/*.done` — не более 10 календарных
+дней истории и не более 10 файлов; (б) `log/prepare_*.txt` — оставляется 3 самых
+свежих лога. После 21:00:00 скрипт не трогает сегодняшние рабочие результаты —
+это защита официального ночного запуска.
+
+Важная деталь: `logging.basicConfig` в `prepare.py` сделан внутри `main()`, а не
+на уровне модуля. Причина — `tests/test_prepare.py` импортирует модуль, и если бы
+FileHandler открывался при импорте, каждый прогон тестов создавал бы пустой
+`log/prepare_*.txt`. При обычном запуске (`python prepare.py` или из `run_all.py`)
+`main()` вызывается и лог наполняется как прежде.
 
 ## Порядок в `run_all.py`
 

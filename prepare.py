@@ -1,16 +1,21 @@
 """
 Подготовка к тестовому запуску пайплайна.
 
-Удаляет результаты тестовых запусков, произошедших до 21:00:00 текущего дня:
-  - Файлы предсказаний за сегодня (embedding, sentiment, combined)
-  - Done-маркеры за сегодня (защита от повторной записи)
+Если скрипт запущен до 21:00:00 текущего дня — удаляет сегодняшние результаты,
+чтобы пайплайн можно было прогнать заново:
+  - Файлы предсказаний за сегодня (embedding, sentiment, combined) по RTS/MIX
+  - Done-маркеры за сегодня в trade/state/*.done (защита от повторной записи)
 
-Если скрипт запущен после 21:00:00 — ничего не удаляет, чтобы защитить
-рабочие результаты, созданные в официальное время запуска (21:00:05).
+Если скрипт запущен после 21:00:00 — ничего сегодняшнего не трогает, чтобы
+защитить рабочие результаты официального ночного запуска (21:00:05).
 
-Логика:
-  Текущее время < 21:00:00 → удалить файлы за сегодня
-  Текущее время >= 21:00:00 → ничего не трогать
+В любом случае (до и после 21:00:00) выполняется housekeeping:
+  - trade/state/*.done: хранится не более DONE_RETENTION_DAYS календарных дней
+    и не более DONE_RETENTION_FILES файлов (см. константы ниже).
+  - log/prepare_*.txt: оставляется 3 самых свежих лога этого скрипта.
+
+Замечание по импорту: настройка logging (в т.ч. создание файла log/prepare_*.txt)
+сделана внутри main(), чтобы `import prepare` в тестах не плодил пустые логи.
 
 Используется в начале run_all.py как первый шаг (перед основным пайплайном).
 """
@@ -26,18 +31,6 @@ STATE_DIR = ROOT / "trade" / "state"
 DONE_RETENTION_DAYS = 10
 DONE_RETENTION_FILES = 10
 
-timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_file = LOG_DIR / f"prepare_{timestamp}.txt"
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(),
-    ],
-    force=True,
-)
 logger = logging.getLogger("prepare")
 
 
@@ -108,6 +101,18 @@ def main() -> int:
     today_str = now.strftime("%Y-%m-%d")
     hour = now.hour
     minute = now.minute
+
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
+    log_file = LOG_DIR / f"prepare_{timestamp}.txt"
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+        force=True,
+    )
 
     logger.info(f"=== prepare.py начат: {timestamp} ===")
     logger.info(f"Текущее время: {hour:02d}:{minute:02d}, дата: {today_str}")

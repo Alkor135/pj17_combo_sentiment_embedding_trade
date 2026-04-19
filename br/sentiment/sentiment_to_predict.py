@@ -14,7 +14,8 @@
 - action == follow: sentiment > 0 -> up, < 0 -> down, == 0 -> skip
 - action == invert: sentiment > 0 -> down, < 0 -> up, == 0 -> skip
 - action == skip:   skip
-На skip файл не создаётся. Если файл за сегодня уже есть — не перезаписываем.
+На skip файл не создаётся. Если файл за сегодня уже есть и создан после time_start —
+не перезаписываем; если создан до time_start (тестовый прогон) — перезаписывается.
 """
 
 from __future__ import annotations
@@ -159,8 +160,13 @@ def main() -> int:
     out_file = predict_path / f"{today.strftime('%Y-%m-%d')}.txt"
 
     if out_file.exists():
-        logger.info(f"Файл {out_file} уже существует — пропуск.")
-        return 0
+        cutoff = datetime.combine(date.today(), datetime.strptime(settings["time_start"], "%H:%M:%S").time())
+        file_mtime = datetime.fromtimestamp(out_file.stat().st_mtime)
+        if file_mtime < cutoff:
+            logger.info(f"Файл {out_file} создан до {settings['time_start']} (тестовый) — перезаписываем.")
+        else:
+            logger.info(f"Файл {out_file} уже существует — пропуск.")
+            return 0
 
     sentiment = get_today_sentiment(pkl_path, today)
     if sentiment is None:

@@ -9,7 +9,8 @@
   4) Направление raw = sign(open_to_open_next): > 0 → "up", < 0 → "down", == 0 или NaN → "skip".
   5) Если settings['invert_signal'] == true — инвертирует (up↔down); skip остаётся skip.
 Пишет <predict_path>/YYYY-MM-DD.txt (YYYY-MM-DD — дата только что закрывшейся сессии) ВСЕГДА,
-включая случай skip (для ручного контроля). Если файл за эту дату уже есть — пропуск.
+включая случай skip (для ручного контроля). Если файл за эту дату уже есть и создан
+после time_start — пропуск; если создан до time_start (тестовый прогон) — перезаписывается.
 """
 
 from __future__ import annotations
@@ -133,8 +134,13 @@ def main() -> int:
     out_file = predict_path / f"{date_str}.txt"
 
     if out_file.exists():
-        logging.info(f"Файл {out_file} уже существует — пропуск.")
-        return 0
+        cutoff = datetime.combine(datetime.now().date(), datetime.strptime(settings["time_start"], "%H:%M:%S").time())
+        file_mtime = datetime.fromtimestamp(out_file.stat().st_mtime)
+        if file_mtime < cutoff:
+            logging.info(f"Файл {out_file} создан до {settings['time_start']} (тестовый) — перезаписываем.")
+        else:
+            logging.info(f"Файл {out_file} уже существует — пропуск.")
+            return 0
 
     chunks_cur = df.iloc[-1]["CHUNKS"]
 

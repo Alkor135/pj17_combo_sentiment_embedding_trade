@@ -15,6 +15,8 @@
   Sentiment: <up|down|skip|n/a>
   Предсказанное направление: <up|down|skip>
 Оба исходных файла считаются уже «готовыми к исполнению» (инверсия применена при записи).
+Если файл за сегодня уже есть и создан после time_start — пропуск;
+если создан до time_start (тестовый прогон) — перезаписывается.
 """
 
 from __future__ import annotations
@@ -94,8 +96,13 @@ def main() -> int:
     combined_path.mkdir(parents=True, exist_ok=True)
 
     if out_file.exists():
-        logger.info(f"Файл {out_file} уже существует — пропуск.")
-        return 0
+        cutoff = datetime.combine(date.today(), datetime.strptime(combined_settings["time_start"], "%H:%M:%S").time())
+        file_mtime = datetime.fromtimestamp(out_file.stat().st_mtime)
+        if file_mtime < cutoff:
+            logger.info(f"Файл {out_file} создан до {combined_settings['time_start']} (тестовый) — перезаписываем.")
+        else:
+            logger.info(f"Файл {out_file} уже существует — пропуск.")
+            return 0
 
     emb_dir = read_direction(emb_file)
     sent_dir = read_direction(sent_file)

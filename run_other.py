@@ -139,7 +139,7 @@ def run(script: Path, hard: bool) -> int:
 
 
 def main() -> int:
-    logger.info(f"=== pj17 run_all.py начат: {timestamp} ===")
+    logger.info(f"=== pj17 run_other.py начат: {timestamp} ===")
     logger.info(f"Python: {sys.executable}")
     logger.info(f"ROOT: {ROOT}")
 

@@ -20,7 +20,7 @@ LOG_DIR = ROOT / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_file = LOG_DIR / f"run_all_{timestamp}.txt"
+log_file = LOG_DIR / f"run_report_{timestamp}.txt"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,9 +31,9 @@ logging.basicConfig(
     ],
     force=True,
 )
-logger = logging.getLogger("run_all")
+logger = logging.getLogger("run_report")
 
-for old in sorted(LOG_DIR.glob("run_all_*.txt"))[:-3]:
+for old in sorted(LOG_DIR.glob("run_report_*.txt"))[:-3]:
     try:
         old.unlink()
     except Exception:
@@ -59,14 +59,14 @@ HARD_STEPS: list[Path] = [
     ROOT / "si" / "embedding" / "embedding_backtest.py",
     ROOT / "spyf" / "embedding" / "embedding_backtest.py",
 
-    # Этап 6: прогноз эмбеддингов на сегодня (с инверсией)
-    ROOT / "rts" / "embedding" / "embedding_to_predict.py",
-    ROOT / "mix" / "embedding" / "embedding_to_predict.py",
-    ROOT / "br" / "embedding" / "embedding_to_predict.py",
-    ROOT / "gold" / "embedding" / "embedding_to_predict.py",
-    ROOT / "ng" / "embedding" / "embedding_to_predict.py",
-    ROOT / "si" / "embedding" / "embedding_to_predict.py",
-    ROOT / "spyf" / "embedding" / "embedding_to_predict.py",
+    # # Этап 6: прогноз эмбеддингов на сегодня (с инверсией)
+    # ROOT / "rts" / "embedding" / "embedding_to_predict.py",
+    # ROOT / "mix" / "embedding" / "embedding_to_predict.py",
+    # ROOT / "br" / "embedding" / "embedding_to_predict.py",
+    # ROOT / "gold" / "embedding" / "embedding_to_predict.py",
+    # ROOT / "ng" / "embedding" / "embedding_to_predict.py",
+    # ROOT / "si" / "embedding" / "embedding_to_predict.py",
+    # ROOT / "spyf" / "embedding" / "embedding_to_predict.py",
 
     # Этап 7: sentiment-анализ через LLM (тяжёлый — Ollama)
     ROOT / "rts" / "sentiment" / "sentiment_analysis.py",
@@ -77,23 +77,23 @@ HARD_STEPS: list[Path] = [
     ROOT / "si" / "sentiment" / "sentiment_analysis.py",
     ROOT / "spyf" / "sentiment" / "sentiment_analysis.py",
 
-    # Этап 8: прогноз sentiment на сегодня (по rules.yaml)
-    ROOT / "rts" / "sentiment" / "sentiment_to_predict.py",
-    ROOT / "mix" / "sentiment" / "sentiment_to_predict.py",
-    ROOT / "br" / "sentiment" / "sentiment_to_predict.py",
-    ROOT / "gold" / "sentiment" / "sentiment_to_predict.py",
-    ROOT / "ng" / "sentiment" / "sentiment_to_predict.py",
-    ROOT / "si" / "sentiment" / "sentiment_to_predict.py",
-    ROOT / "spyf" / "sentiment" / "sentiment_to_predict.py",
+    # # Этап 8: прогноз sentiment на сегодня (по rules.yaml)
+    # ROOT / "rts" / "sentiment" / "sentiment_to_predict.py",
+    # ROOT / "mix" / "sentiment" / "sentiment_to_predict.py",
+    # ROOT / "br" / "sentiment" / "sentiment_to_predict.py",
+    # ROOT / "gold" / "sentiment" / "sentiment_to_predict.py",
+    # ROOT / "ng" / "sentiment" / "sentiment_to_predict.py",
+    # ROOT / "si" / "sentiment" / "sentiment_to_predict.py",
+    # ROOT / "spyf" / "sentiment" / "sentiment_to_predict.py",
 
-    # Этап 9: согласованное голосование → combined-прогноз
-    ROOT / "rts" / "combine_predictions.py",
-    ROOT / "mix" / "combine_predictions.py",
-    ROOT / "br" / "combine_predictions.py",
-    ROOT / "gold" / "combine_predictions.py",
-    ROOT / "ng" / "combine_predictions.py",
-    ROOT / "si" / "combine_predictions.py",
-    ROOT / "spyf" / "combine_predictions.py",
+    # # Этап 9: согласованное голосование → combined-прогноз
+    # ROOT / "rts" / "combine_predictions.py",
+    # ROOT / "mix" / "combine_predictions.py",
+    # ROOT / "br" / "combine_predictions.py",
+    # ROOT / "gold" / "combine_predictions.py",
+    # ROOT / "ng" / "combine_predictions.py",
+    # ROOT / "si" / "combine_predictions.py",
+    # ROOT / "spyf" / "combine_predictions.py",
 ]
 
 SOFT_STEPS: list[Path] = [
@@ -171,7 +171,7 @@ def run(script: Path, hard: bool) -> int:
 
 
 def main() -> int:
-    logger.info(f"=== pj17 run_all.py начат: {timestamp} ===")
+    logger.info(f"=== pj17 run_report.py начат: {timestamp} ===")
     logger.info(f"Python: {sys.executable}")
     logger.info(f"ROOT: {ROOT}")
 
@@ -183,7 +183,7 @@ def main() -> int:
     for step in SOFT_STEPS:
         run(step, hard=False)
 
-    logger.info("=== pj17 run_all.py завершён успешно ===")
+    logger.info("=== pj17 run_report.py завершён успешно ===")
     return 0
 
 

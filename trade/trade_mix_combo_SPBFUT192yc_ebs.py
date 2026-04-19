@@ -67,7 +67,7 @@ current_filepath = predict_path / current_filename
 
 # --- Настройка логгирования ---
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-log_file = log_path / f'trade_{ticker_lc}_tri_{timestamp}.txt'
+log_file = log_path / f'trade_{ticker_lc}_combo_{timestamp}.txt'
 
 logging.basicConfig(
     level=logging.INFO,
@@ -91,7 +91,7 @@ def cleanup_old_logs(log_dir: Path, prefix: str, max_files: int = 3):
             except Exception as e:
                 logger.warning(f"Не удалось удалить {old_file}: {e}")
 
-cleanup_old_logs(log_path, prefix=f"trade_{ticker_lc}_tri")
+cleanup_old_logs(log_path, prefix=f"trade_{ticker_lc}_combo")
 
 # --- Вспомогательные функции ---
 def get_direction(filepath):

@@ -298,3 +298,7 @@ trade/log/*
 
 log/
 .claude/
+
+buhinvest_analize/*.png
+buhinvest_analize/*.xlsx
+buhinvest_analize/*.html

@@ -16,12 +16,15 @@
 """
 
 import logging
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 LOG_DIR = ROOT / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+STATE_DIR = ROOT / "trade" / "state"
+DONE_RETENTION_DAYS = 10
+DONE_RETENTION_FILES = 10
 
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 log_file = LOG_DIR / f"prepare_{timestamp}.txt"
@@ -38,6 +41,68 @@ logging.basicConfig(
 logger = logging.getLogger("prepare")
 
 
+def parse_done_marker_date(path: Path) -> date | None:
+    """Извлекает дату из имени .done-маркера формата <prefix>_YYYY-MM-DD.done."""
+    if path.suffix != ".done":
+        return None
+
+    stem = path.stem
+    prefix, sep, date_str = stem.rpartition("_")
+    if not prefix or not sep:
+        return None
+
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def get_done_markers_to_delete(
+    marker_paths,
+    *,
+    today: date,
+    max_age_days: int = DONE_RETENTION_DAYS,
+    max_files: int = DONE_RETENTION_FILES,
+) -> list[Path]:
+    """
+    Возвращает .done-маркеры для удаления:
+      - старше max_age_days дней от today
+      - сверх лимита max_files среди оставшихся валидных маркеров
+    """
+    dated_markers: list[tuple[Path, date]] = []
+    to_delete: list[Path] = []
+
+    for marker_path in marker_paths:
+        marker_date = parse_done_marker_date(marker_path)
+        if marker_date is None:
+            continue
+        dated_markers.append((marker_path, marker_date))
+
+    min_date = today - timedelta(days=max_age_days - 1)
+    kept_candidates: list[tuple[Path, date]] = []
+
+    for marker_path, marker_date in dated_markers:
+        if marker_date < min_date:
+            to_delete.append(marker_path)
+        else:
+            kept_candidates.append((marker_path, marker_date))
+
+    kept_candidates.sort(key=lambda item: (item[1], item[0].name), reverse=True)
+    overflow = kept_candidates[max_files:]
+    to_delete.extend(path for path, _ in overflow)
+
+    return sorted(to_delete, key=lambda path: path.name, reverse=True)
+
+
+def cleanup_prepare_logs(log_dir: Path, max_files: int = 3) -> None:
+    """Оставляет только max_files самых новых логов prepare."""
+    for old in sorted(log_dir.glob("prepare_*.txt"))[:-max_files]:
+        try:
+            old.unlink()
+        except Exception:
+            pass
+
+
 def main() -> int:
     now = datetime.now()
     today_str = now.strftime("%Y-%m-%d")
@@ -46,6 +111,7 @@ def main() -> int:
 
     logger.info(f"=== prepare.py начат: {timestamp} ===")
     logger.info(f"Текущее время: {hour:02d}:{minute:02d}, дата: {today_str}")
+    cleanup_prepare_logs(LOG_DIR)
 
     # Порог: 21:00:00 (21 час, начиная с минуты 0)
     cutoff_hour = 21
@@ -71,14 +137,12 @@ def main() -> int:
         Path("C:/Users/Alkor/gd/predict_ai/mix_combined") / f"{today_str}.txt",
     ]
 
-    done_markers = [
-        ROOT / "trade" / "state" / f"rts_SPBFUT192yc_{today_str}.done",
-        ROOT / "trade" / "state" / f"rts_SPBFUT16qg3_{today_str}.done",
-        ROOT / "trade" / "state" / f"mix_SPBFUT192yc_{today_str}.done",
-        ROOT / "trade" / "state" / f"mix_SPBFUT16qg3_{today_str}.done",
+    done_markers = list(STATE_DIR.glob("*.done"))
+    today_done_markers = [
+        path for path in done_markers if parse_done_marker_date(path) == now.date()
     ]
 
-    all_files = files_to_delete + done_markers
+    all_files = files_to_delete + today_done_markers
 
     deleted_count = 0
     for filepath in all_files:
@@ -90,12 +154,26 @@ def main() -> int:
             except Exception as exc:
                 logger.warning(f"  Не удалось удалить {filepath}: {exc}")
 
-    # Очистка старых логов prepare (оставляем только 3 самых новых)
-    for old in sorted(LOG_DIR.glob("prepare_*.txt"))[:-3]:
-        try:
-            old.unlink()
-        except Exception:
-            pass
+    old_done_markers = get_done_markers_to_delete(
+        done_markers,
+        today=now.date(),
+        max_age_days=DONE_RETENTION_DAYS,
+        max_files=DONE_RETENTION_FILES,
+    )
+    if old_done_markers:
+        logger.info(
+            "Очистка истории .done: удаляем маркеры старше "
+            f"{DONE_RETENTION_DAYS} дней и сверх лимита {DONE_RETENTION_FILES} файлов."
+        )
+
+    for filepath in old_done_markers:
+        if filepath.exists():
+            try:
+                filepath.unlink()
+                logger.info(f"  Удалён старый done-маркер: {filepath}")
+                deleted_count += 1
+            except Exception as exc:
+                logger.warning(f"  Не удалось удалить {filepath}: {exc}")
 
     logger.info(f"\nУдалено файлов: {deleted_count}")
     logger.info("=== prepare.py завершён успешно ===\n")

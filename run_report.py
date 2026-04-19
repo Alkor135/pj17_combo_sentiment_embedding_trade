@@ -1,24 +1,10 @@
 """
-Оркестратор pj17 для ежедневного запуска из Windows Task Scheduler в 21:00:05.
-
-Обрабатывает два тикера (RTS и MIX). Каждый этап выполняется парой RTS → MIX,
-чтобы оба .tri попали в QUIK с минимальным зазором между ними:
-  0) prepare.py (удаляет тестовые результаты, если запуск до 21:00)
-  1) beget/sync_files.py
-  2) shared: download_minutes_to_db → convert_minutes_to_days (RTS, MIX); create_markdown_files (только RTS — md_path общий)
-  3) embedding: create_embedding → embedding_backtest → embedding_to_predict (инверсия) (RTS, MIX)
-  4) sentiment: sentiment_analysis → sentiment_to_predict                                (RTS, MIX)
-  5) combine_predictions.py — согласованное голосование                                  (RTS, MIX)
-  6) trade/trade_rts_combo_SPBFUT192yc_ebs.py  +  trade/trade_mix_combo_SPBFUT192yc_ebs.py  ← встык, критично по времени
-  7) Аналитика (soft-fail): embedding_analysis, sentiment_group_stats, sentiment_backtest,
-     sentiment_compare — по обоим тикерам; sentiment_compare MIX идёт последним.
-
-Hard-fail (exit с кодом ошибки) до и включая trade-скрипты — чтобы при сбое на торговом
-этапе сразу поднять алерт. После trade-скриптов ошибки — warning, пайплайн продолжается.
-
-Регистрация в планировщике Windows:
-  schtasks /Create /SC DAILY /ST 21:00:05 /TN "pj17_run_all" ^
-      /TR "python C:\\Users\\Alkor\\VSCode\\pj17_combo_sentiment_embedding_trade\\run_all.py"
+Оркестратор pj17 для создания html-отчета. Минутки, дневки и новостные md-файлы 
+должны быть уже готовы (т.е. этапы 1-3 должны быть выполнены). 
+Этапы 4-9 — тяжёлые, их выполнение и результат критичны для итогового отчёта, 
+поэтому они в жёстком режиме (hard-fail). 
+Этап 10 — торговые скрипты, в этом файле не запускаются. 
+В конце запускается аналитика (soft-fail).
 """
 
 from __future__ import annotations
@@ -55,61 +41,93 @@ for old in sorted(LOG_DIR.glob("run_all_*.txt"))[:-3]:
 
 
 HARD_STEPS: list[Path] = [
-    ROOT / "prepare.py",  # удаление тестовых файлов, если запуск до 21:00:00 (защита рабочих результатов)
-    ROOT / "beget" / "sync_files.py",  # синхронизация файлов с удалённого сервера (включая .tri для QUIK)
-
-    # Этап 1: загрузка минутных котировок в БД (у каждого тикера своя БД)
-    ROOT / "rts" / "shared" / "download_minutes_to_db.py",
-    ROOT / "mix" / "shared" / "download_minutes_to_db.py",
-
-    # Этап 2: агрегация минут → дневные свечи
-    ROOT / "rts" / "shared" / "convert_minutes_to_days.py",
-    ROOT / "mix" / "shared" / "convert_minutes_to_days.py",
-
-    # Этап 3: markdown-сводки новостей по торговым сессиям (md_path общий, второй вызов избыточен)
-    ROOT / "rts" / "shared" / "create_markdown_files.py",
-
     # Этап 4: эмбеддинги (тяжёлый — Ollama)
     ROOT / "rts" / "embedding" / "create_embedding.py",
     ROOT / "mix" / "embedding" / "create_embedding.py",
+    ROOT / "br" / "embedding" / "create_embedding.py",
+    ROOT / "gold" / "embedding" / "create_embedding.py",
+    ROOT / "ng" / "embedding" / "create_embedding.py",
+    ROOT / "si" / "embedding" / "create_embedding.py",
+    ROOT / "spyf" / "embedding" / "create_embedding.py",
 
     # Этап 5: бэктест эмбеддингов + выбор лучшего k
     ROOT / "rts" / "embedding" / "embedding_backtest.py",
     ROOT / "mix" / "embedding" / "embedding_backtest.py",
+    ROOT / "br" / "embedding" / "embedding_backtest.py",
+    ROOT / "gold" / "embedding" / "embedding_backtest.py",
+    ROOT / "ng" / "embedding" / "embedding_backtest.py",
+    ROOT / "si" / "embedding" / "embedding_backtest.py",
+    ROOT / "spyf" / "embedding" / "embedding_backtest.py",
 
     # Этап 6: прогноз эмбеддингов на сегодня (с инверсией)
     ROOT / "rts" / "embedding" / "embedding_to_predict.py",
     ROOT / "mix" / "embedding" / "embedding_to_predict.py",
+    ROOT / "br" / "embedding" / "embedding_to_predict.py",
+    ROOT / "gold" / "embedding" / "embedding_to_predict.py",
+    ROOT / "ng" / "embedding" / "embedding_to_predict.py",
+    ROOT / "si" / "embedding" / "embedding_to_predict.py",
+    ROOT / "spyf" / "embedding" / "embedding_to_predict.py",
 
     # Этап 7: sentiment-анализ через LLM (тяжёлый — Ollama)
     ROOT / "rts" / "sentiment" / "sentiment_analysis.py",
     ROOT / "mix" / "sentiment" / "sentiment_analysis.py",
+    ROOT / "br" / "sentiment" / "sentiment_analysis.py",
+    ROOT / "gold" / "sentiment" / "sentiment_analysis.py",
+    ROOT / "ng" / "sentiment" / "sentiment_analysis.py",
+    ROOT / "si" / "sentiment" / "sentiment_analysis.py",
+    ROOT / "spyf" / "sentiment" / "sentiment_analysis.py",
 
     # Этап 8: прогноз sentiment на сегодня (по rules.yaml)
     ROOT / "rts" / "sentiment" / "sentiment_to_predict.py",
     ROOT / "mix" / "sentiment" / "sentiment_to_predict.py",
+    ROOT / "br" / "sentiment" / "sentiment_to_predict.py",
+    ROOT / "gold" / "sentiment" / "sentiment_to_predict.py",
+    ROOT / "ng" / "sentiment" / "sentiment_to_predict.py",
+    ROOT / "si" / "sentiment" / "sentiment_to_predict.py",
+    ROOT / "spyf" / "sentiment" / "sentiment_to_predict.py",
 
     # Этап 9: согласованное голосование → combined-прогноз
     ROOT / "rts" / "combine_predictions.py",
     ROOT / "mix" / "combine_predictions.py",
-
-    # Этап 10: торговые скрипты встык — оба .tri попадают в QUIK с минимальным лагом
-    ROOT / "trade" / "trade_rts_combo_SPBFUT192yc_ebs.py",
-    ROOT / "trade" / "trade_mix_combo_SPBFUT192yc_ebs.py",
+    ROOT / "br" / "combine_predictions.py",
+    ROOT / "gold" / "combine_predictions.py",
+    ROOT / "ng" / "combine_predictions.py",
+    ROOT / "si" / "combine_predictions.py",
+    ROOT / "spyf" / "combine_predictions.py",
 ]
 
 SOFT_STEPS: list[Path] = [
     ROOT / "rts" / "embedding" / "embedding_analysis.py",
     ROOT / "mix" / "embedding" / "embedding_analysis.py",
+    ROOT / "br" / "embedding" / "embedding_analysis.py",
+    ROOT / "gold" / "embedding" / "embedding_analysis.py",
+    ROOT / "ng" / "embedding" / "embedding_analysis.py",
+    ROOT / "si" / "embedding" / "embedding_analysis.py",
+    ROOT / "spyf" / "embedding" / "embedding_analysis.py",
 
     ROOT / "rts" / "sentiment" / "sentiment_group_stats.py",
     ROOT / "mix" / "sentiment" / "sentiment_group_stats.py",
+    ROOT / "br" / "sentiment" / "sentiment_group_stats.py",
+    ROOT / "gold" / "sentiment" / "sentiment_group_stats.py",
+    ROOT / "ng" / "sentiment" / "sentiment_group_stats.py",
+    ROOT / "si" / "sentiment" / "sentiment_group_stats.py",
+    ROOT / "spyf" / "sentiment" / "sentiment_group_stats.py",
 
     ROOT / "rts" / "sentiment" / "sentiment_backtest.py",
     ROOT / "mix" / "sentiment" / "sentiment_backtest.py",
+    ROOT / "br" / "sentiment" / "sentiment_backtest.py",
+    ROOT / "gold" / "sentiment" / "sentiment_backtest.py",
+    ROOT / "ng" / "sentiment" / "sentiment_backtest.py",
+    ROOT / "si" / "sentiment" / "sentiment_backtest.py",
+    ROOT / "spyf" / "sentiment" / "sentiment_backtest.py",
 
     ROOT / "rts" / "sentiment" / "sentiment_compare.py",
-    ROOT / "mix" / "sentiment" / "sentiment_compare.py",  # последний
+    ROOT / "mix" / "sentiment" / "sentiment_compare.py",
+    ROOT / "br" / "sentiment" / "sentiment_compare.py",
+    ROOT / "gold" / "sentiment" / "sentiment_compare.py",
+    ROOT / "ng" / "sentiment" / "sentiment_compare.py",
+    ROOT / "si" / "sentiment" / "sentiment_compare.py",
+    ROOT / "spyf" / "sentiment" / "sentiment_compare.py",  # последний
 ]
 
 

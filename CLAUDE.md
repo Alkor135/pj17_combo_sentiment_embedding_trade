@@ -64,15 +64,15 @@ pj17_combo_sentiment_embedding_trade/
 │   └── (такое же дерево, settings.yaml ticker: SPYF, фьючерс SFM6)
 ├── trade/
 │   ├── settings.yaml                   # accounts.{iis,ebs}.{rts,mix}.quantity_{open,close}
-│   ├── trade_rts_tri_SPBFUT192yc_ebs.py  # суффикс _<trade_account>_<key> — НЕ переименовывать
-│   ├── trade_mix_tri_SPBFUT192yc_ebs.py
+│   ├── trade_rts_combo_SPBFUT192yc_ebs.py  # суффикс _<trade_account>_<key> сохраняем, combo обозначает стратегию
+│   ├── trade_mix_combo_SPBFUT192yc_ebs.py
 │   ├── read_positions.py               # читает позиции из QUIK (json) или yaml-override
 │   ├── quik_export_minutes.lua
 │   ├── quik_export_positions.lua       # QUIK-экспортёр позиций → quik_export/positions.json
 │   ├── quik_export/                    # minutes.csv + positions.json от lua-экспортёров
 │   ├── state/                          # *.done маркеры + positions.yaml (ручной override)
 │   └── log/
-├── prepare.py                          # очистка сегодняшних результатов при тестовом запуске (до 21:00)
+├── prepare.py                          # очистка сегодняшних результатов при тестовом запуске (до 21:00) + retention .done
 ├── run_all.py                          # оркестратор (Task Scheduler, 21:00:05)
 ├── html_open.py                        # открывает rts/plots/*.html + mix/plots/*.html в Chrome
 ├── requirements.txt
@@ -116,7 +116,7 @@ pj17_combo_sentiment_embedding_trade/
 оба случая сводятся к `direction = skip` — эффект одинаков.
 
 ### 4. Target-state торговая модель
-Торговый скрипт (`trade_<ticker>_tri_<trade_account>_<key>.py`):
+Торговый скрипт (`trade_<ticker>_combo_<trade_account>_<key>.py`):
 1. Читает combined-прогноз на сегодня, вычисляет целевую позицию
    (`up` → +qty, `down` → −qty, `skip` → 0).
 2. Текущую позицию берёт из `read_positions.py`: сначала пробует
@@ -130,11 +130,12 @@ pj17_combo_sentiment_embedding_trade/
    `trade/state/{ticker_lc}_{trade_account}_{YYYY-MM-DD}.done` (в имени есть счёт,
    так что два счёта на одном тикере не конфликтуют).
 
-### 5. Имена торговых скриптов — с суффиксом счёта
-`trade_rts_tri_SPBFUT192yc_ebs.py` — суффикс кодирует номер торгового счёта
-(`SPBFUT192yc`) и ключ аккаунта в `trade/settings.yaml` (`ebs` →
-`accounts.ebs`). Это позволяет держать параллельные скрипты под разные счета без
-рефакторинга. **Не переименовывать.**
+### 5. Имена торговых скриптов — с префиксом стратегии и суффиксом счёта
+`trade_rts_combo_SPBFUT192yc_ebs.py` — `combo` явно обозначает комбинированную
+стратегию, а суффикс по-прежнему кодирует номер торгового счёта (`SPBFUT192yc`) и
+ключ аккаунта в `trade/settings.yaml` (`ebs` → `accounts.ebs`). Это позволяет
+дальше добавлять отдельные скрипты под стратегии `embedding` или `sentiment`
+без рефакторинга multi-account структуры.
 
 ### 6. Multi-account trade/settings.yaml
 ```yaml
@@ -149,8 +150,10 @@ accounts:
 `prepare.py` — первый шаг `run_all.py`. Если текущее время < 21:00:00, он удаляет
 за сегодня: файлы прогнозов (`<ticker>_embedding`, `<ticker>_sentiment`,
 `<ticker>_combined`) и done-маркеры `trade/state/*.done`. Это позволяет
-перезапустить пайплайн днём без лишних «уже существует — пропуск». После 21:00:00
-скрипт ничего не трогает — это защита официальных рабочих результатов.
+перезапустить пайплайн днём без лишних «уже существует — пропуск». Дополнительно
+он всегда делает housekeeping `trade/state/*.done`: хранит не более 10
+календарных дней истории и не более 10 файлов. После 21:00:00 скрипт не трогает
+сегодняшние рабочие результаты — это защита официального ночного запуска.
 
 ## Порядок в `run_all.py`
 
@@ -166,8 +169,8 @@ Hard-fail (останов пайплайна при ошибке):
 8. `{rts,mix}/sentiment/sentiment_analysis.py`
 9. `{rts,mix}/sentiment/sentiment_to_predict.py`
 10. `{rts,mix}/combine_predictions.py`
-11. `trade/trade_rts_tri_SPBFUT192yc_ebs.py` ← встык
-12. `trade/trade_mix_tri_SPBFUT192yc_ebs.py` ← встык, критично по времени
+11. `trade/trade_rts_combo_SPBFUT192yc_ebs.py` ← встык
+12. `trade/trade_mix_combo_SPBFUT192yc_ebs.py` ← встык, критично по времени
 
 Soft-fail (логируется, пайплайн продолжается):
 13. `{rts,mix}/embedding/embedding_analysis.py`
@@ -185,7 +188,7 @@ Soft-fail (логируется, пайплайн продолжается):
 Копируем `rts/` → `<new>/`, правим `<new>/settings.yaml` (`ticker`, `ticker_lc`,
 пути котировок/md и фьючерсы в `ticker_close`/`ticker_open`) и `<new>/rules.yaml`.
 В `trade/` добавляем копию торгового скрипта с новым префиксом тикера и суффиксом
-счёта, например `trade_<new>_tri_<trade_account>_<key>.py`, соблюдая конвенцию
-имени. В `trade/settings.yaml` добавляем секцию `<new>` в каждый `accounts.*`
+счёта, например `trade_<new>_combo_<trade_account>_<key>.py` для combo-стратегии,
+соблюдая конвенцию имени. В `trade/settings.yaml` добавляем секцию `<new>` в каждый `accounts.*`
 (`quantity_open`, `quantity_close`). В `run_all.py` добавляем шаги нового тикера в
 `HARD_STEPS` и `SOFT_STEPS` парно с уже существующими.

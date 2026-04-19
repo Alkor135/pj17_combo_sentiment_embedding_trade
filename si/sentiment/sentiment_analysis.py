@@ -56,7 +56,7 @@ def cleanup_old_logs(log_dir: Path, max_files: int = 3) -> None:
                 print(f"Не удалось удалить старый лог {old_file}: {exc}")
 
 
-def setup_logging(verbose: bool = False) -> None:
+def setup_logging(ticker_label: str, verbose: bool = False) -> None:
     level = logging.DEBUG if verbose else logging.INFO
     log_dir = TICKER_DIR / "log"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -72,7 +72,7 @@ def setup_logging(verbose: bool = False) -> None:
             logging.StreamHandler(),
         ],
     )
-    logging.info("Запуск sentiment_analysis. Лог: %s", log_file)
+    logging.info("[%s] Запуск sentiment_analysis. Лог: %s", ticker_label, log_file)
 
 
 def find_md_files(md_dir: Path) -> list[Path]:
@@ -254,7 +254,6 @@ def main(
     ),
     verbose: bool = typer.Option(False, help="Включить подробный лог."),
 ) -> None:
-    setup_logging(verbose)
     # --- Загрузка настроек из si/settings.yaml (common + sentiment) ---
     _raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
     settings = {**(_raw.get("common") or {}), **(_raw.get("sentiment") or {})}
@@ -265,6 +264,7 @@ def main(
             settings[_k] = _v.replace("{ticker}", _t).replace("{ticker_lc}", _tl)
 
     ticker = settings.get("ticker", "Si")
+    setup_logging(ticker, verbose)
     if model is None:
         model = settings.get("sentiment_model", "gemma3:12b")
     logging.info("Sentiment model: %s", model)
@@ -305,10 +305,10 @@ def main(
     for md_file in files:
         md_file_path = str(md_file.resolve())
         if md_file_path in processed_paths:
-            logging.info("Skipping already processed file: %s", md_file.name)
+            logging.info("[%s] Skipping already processed file: %s", ticker, md_file.name)
             continue
 
-        logging.info("Processing file: %s", md_file.name)
+        logging.info("[%s] Processing file: %s", ticker, md_file.name)
         news_text = read_markdown(md_file)
         prompt = build_prompt(ticker, prompt_template, news_text)
         prompt_tokens = warn_if_token_limit_exceeded(prompt, token_limit, md_file.name)
@@ -322,7 +322,8 @@ def main(
             sentiment = None
 
         logging.info(
-            "Result %s: sentiment=%s, prompt_tokens=%s",
+            "[%s] Result %s: sentiment=%s, prompt_tokens=%s",
+            ticker,
             md_file.name,
             sentiment,
             prompt_tokens,

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import date, datetime
 from pathlib import Path
 
 import yaml
@@ -86,6 +87,27 @@ def get_position(trdaccid: str, sec_code: str) -> int:
     # 3. Нет данных — считаем, что вне рынка
     logger.info(f"Позиция {sec_code}@{trdaccid}: нет данных, принимаем 0 (вне рынка)")
     return 0
+
+
+def is_export_fresh(today: date) -> bool:
+    """True, если positions.json экспортирован сегодня (по дате из exported_at).
+
+    Нужно для защиты от торговли по устаревшим позициям, если LUA-экспортёр
+    не отработал (QUIK выключен, окно терминала закрыто и т.п.).
+    Отсутствие файла или невалидный формат → False.
+    """
+    if not _JSON_PATH.exists():
+        return False
+    try:
+        data = json.loads(_JSON_PATH.read_text(encoding="utf-8"))
+        exported_at = data.get("exported_at")
+        if not exported_at:
+            return False
+        export_date = datetime.strptime(exported_at, "%Y-%m-%d %H:%M:%S").date()
+        return export_date == today
+    except Exception as exc:
+        logger.warning(f"positions.json: не удалось распарсить exported_at: {exc}")
+        return False
 
 
 def get_exported_at() -> str | None:

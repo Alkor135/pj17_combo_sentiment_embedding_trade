@@ -148,7 +148,11 @@ def compute_max_k(
     start_pos = dates.get_loc(start_date)
 
     for i in range(start_pos, len(df)):
-        if i < k:
+        # Сдвиг окна на 2 дня: ищем аналог в [i-2-k, i-3] вместо [i-k, i-1].
+        # Причина: в момент реального predict (21:00:05) у дней j=i-1 и j=i-2
+        # NEXT_OPEN_TO_OPEN = NaN (нет 2 будущих OPEN в day DB). Бэктест имитирует
+        # ту же информационную отсечку, что и predict.
+        if i < k + 2:
             continue
 
         chunks_cur = df.iloc[i][col_chunks]
@@ -158,7 +162,7 @@ def compute_max_k(
         indices = []
 
         # быстрые симы для выбора best_j
-        for j in range(i - k, i):
+        for j in range(i - 2 - k, i - 2):
             chunks_prev = df.iloc[j][col_chunks]
 
             sim = chunks_similarity_fast(

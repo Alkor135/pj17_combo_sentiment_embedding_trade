@@ -195,8 +195,8 @@ def main() -> int:
         df_emb = load_cache(cache_file)
         df = df_emb[["CHUNKS"]].join(df_bar[["NEXT_OPEN_TO_OPEN"]], how="left").sort_index()
 
-        if len(df) < best_k + 1:
-            msg = f"В кэше эмбеддингов {len(df)} строк — недостаточно для k={best_k}."
+        if len(df) < best_k + 3:
+            msg = f"В кэше эмбеддингов {len(df)} строк — недостаточно для k={best_k} (нужно ≥ k+3 из-за сдвига окна на 2 дня)."
             logging.error(msg)
             write_predict(out_file, date_str, "skip", "cache_too_small",
                           best_k=best_k, note=msg)
@@ -215,7 +215,10 @@ def main() -> int:
 
         best_sim = -np.inf
         best_j = None
-        for j in range(len(df) - 1 - best_k, len(df) - 1):
+        # Сдвиг окна на 2 дня: исключаем j=N-1 (today), N-2, N-3 — у них
+        # NEXT_OPEN_TO_OPEN ещё не определён (нужны 2 будущих OPEN в day DB).
+        # Симметрично со сдвигом в embedding_backtest.py.
+        for j in range(len(df) - 3 - best_k, len(df) - 3):
             sim = similarity(chunks_cur, df.iloc[j]["CHUNKS"])
             if sim > best_sim:
                 best_sim = sim

@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 import sys
+import yaml
 
 # Цвета консоли
 GREEN = "\033[92m"
@@ -26,24 +27,11 @@ def get_timestamp():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-sync_configs = [
-    {
-        "name": "investing",
-        "db_dir": r"C:\Users\Alkor\gd\db_rss_investing",
-        "log_dir": r"C:\Users\Alkor\gd\db_rss_investing\log",
-        "db_remote": "/home/user/rss_scraper/db_rss_investing/",
-        "log_remote": "/home/user/rss_scraper/log/",
-        "log_pattern": "rss_scraper_investing_to_db_month_msk*.log"
-    },
-    {
-        "name": "all_providers",
-        "db_dir": r"C:\Users\Alkor\gd\db_rss",
-        "log_dir": r"C:\Users\Alkor\gd\db_rss\log",
-        "db_remote": "/home/user/rss_scraper/db_data/",
-        "log_remote": "/home/user/rss_scraper/log/",
-        "log_pattern": "rss_scraper_all_providers_to_db_month_msk*.log"
-    }
-]
+with open(Path(__file__).parent / "settings.yaml", encoding="utf-8") as _f:
+    _cfg = yaml.safe_load(_f)
+
+sync_configs = _cfg["sources"]
+remote_host = _cfg["remote_host"]
 
 
 def ensure_dir(directory: Path):
@@ -147,7 +135,7 @@ def sync_files():
             "--include=**/*.db",
             "--exclude=*",
 
-            f"root@109.172.46.10:{config['db_remote']}",
+            f"{remote_host}:{config['db_remote']}",
 
             win_to_wsl(db_dir) + "/"
         ]
@@ -177,7 +165,7 @@ def sync_files():
             f"--include={config['log_pattern']}",
             "--exclude=*",
 
-            f"root@109.172.46.10:{config['log_remote']}",
+            f"{remote_host}:{config['log_remote']}",
 
             win_to_wsl(log_dir) + "/"
         ]

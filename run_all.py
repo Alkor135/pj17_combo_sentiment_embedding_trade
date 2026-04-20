@@ -9,7 +9,7 @@
   3) embedding: create_embedding → embedding_backtest → embedding_to_predict (инверсия) (RTS, MIX)
   4) sentiment: sentiment_analysis → sentiment_to_predict                                (RTS, MIX)
   5) combine_predictions.py — согласованное голосование                                  (RTS, MIX)
-  6) trade/trade_rts_combo_SPBFUT192yc_ebs.py  +  trade/trade_mix_combo_SPBFUT192yc_ebs.py  ← встык, критично по времени
+  6) trade/trade_rts_sentiment_SPBFUT192yc_ebs.py  +  trade/trade_mix_sentiment_SPBFUT192yc_ebs.py  ← встык, критично по времени
   7) Аналитика (soft-fail): embedding_analysis, sentiment_group_stats, sentiment_backtest,
      sentiment_compare — по обоим тикерам; sentiment_compare MIX идёт последним.
 
@@ -93,8 +93,11 @@ HARD_STEPS: list[Path] = [
     ROOT / "mix" / "combine_predictions.py",
 
     # Этап 10: торговые скрипты встык — оба .tri попадают в QUIK с минимальным лагом
-    ROOT / "trade" / "trade_rts_combo_SPBFUT192yc_ebs.py",
-    ROOT / "trade" / "trade_mix_combo_SPBFUT192yc_ebs.py",
+    # RTS и MIX временно торгуются по sentiment-стратегии (combo-скрипты отключены):
+    # ROOT / "trade" / "trade_rts_combo_SPBFUT192yc_ebs.py",
+    # ROOT / "trade" / "trade_mix_combo_SPBFUT192yc_ebs.py",
+    ROOT / "trade" / "trade_rts_sentiment_SPBFUT192yc_ebs.py",
+    ROOT / "trade" / "trade_mix_sentiment_SPBFUT192yc_ebs.py",
 ]
 
 SOFT_STEPS: list[Path] = [

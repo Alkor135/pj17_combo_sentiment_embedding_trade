@@ -24,6 +24,7 @@ RESET = "\033[0m"
 
 
 def get_timestamp():
+    """Возвращает текущее время в формате для консольных сообщений и логов."""
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -35,15 +36,18 @@ remote_host = _cfg["remote_host"]
 
 
 def ensure_dir(directory: Path):
+    """Создаёт директорию назначения вместе с родительскими папками при необходимости."""
     directory.mkdir(parents=True, exist_ok=True)
 
 
 def win_to_wsl(path: Path):
+    """Преобразует Windows-путь в формат WSL для передачи в rsync."""
 
     return "/mnt/c" + str(path)[2:].replace("\\", "/")
 
 
 def run_command(command, log_file: Path, name: str):
+    """Запускает внешнюю команду, печатает её в консоль и пишет stdout/stderr в лог."""
 
     print(f"[{get_timestamp()}] {name}")
     print("Команда:", " ".join(command))
@@ -71,6 +75,7 @@ def run_command(command, log_file: Path, name: str):
 
 
 def run_rsync(command, log_file: Path, section):
+    """Выполняет rsync-команду и завершает скрипт при критической ошибке."""
 
     code = run_command(command, log_file, section)
 
@@ -94,6 +99,7 @@ def run_rsync(command, log_file: Path, section):
 
 
 def sync_files():
+    """Синхронизирует базы и лог-файлы для всех источников из settings.yaml."""
 
     for config in sync_configs:
 

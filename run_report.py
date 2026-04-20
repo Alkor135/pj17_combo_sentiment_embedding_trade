@@ -15,6 +15,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from orchestrator_logging import build_handlers
+
 ROOT = Path(__file__).resolve().parent
 LOG_DIR = ROOT / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -24,11 +26,8 @@ log_file = LOG_DIR / f"run_report_{timestamp}.txt"
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(),
-    ],
+    format="%(message)s",
+    handlers=build_handlers(log_file),
     force=True,
 )
 logger = logging.getLogger("run_report")

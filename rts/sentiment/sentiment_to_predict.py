@@ -8,14 +8,28 @@
     Дата: 2026-04-09
     Sentiment: -4.00
     Action: invert
+    Status: ok
     Предсказанное направление: up
 
-Логика:
-- action == follow: sentiment > 0 -> up, < 0 -> down, == 0 -> skip
-- action == invert: sentiment > 0 -> down, < 0 -> up, == 0 -> skip
-- action == skip:   skip
-На skip файл не создаётся. Если файл за сегодня уже есть и создан после time_start —
-не перезаписываем; если создан до time_start (тестовый прогон) — перезаписывается.
+Файл пишется ВСЕГДА (включая нештатные ситуации) — чтобы утром всегда было что
+проверить. Направление = skip во всех не-ok случаях; причина — в поле Status,
+подробности (если есть) — в поле Note.
+
+Возможные значения Status:
+  ok              — нормальная запись направления (up/down)
+  rule_skip       — правило для этого sentiment вернуло action=skip
+  sentiment_zero  — sentiment == 0 при action=follow/invert
+  no_rule_match   — sentiment не попал ни в один диапазон rules.yaml
+  no_pkl_row      — в sentiment_scores.pkl нет строки за сегодня
+  pkl_missing     — файл sentiment_scores.pkl не найден
+  pkl_duplicate   — в pkl несколько строк за сегодня (ожидалась одна)
+  error           — необработанное исключение (traceback краткий — в Note)
+
+Если файл за сегодня уже есть и создан после time_start — не перезаписываем;
+если создан до time_start (тестовый прогон) — перезаписывается.
+
+Скрипт всегда возвращает 0, чтобы сбой sentiment по одному тикеру не останавливал
+run_all.py и не блокировал обработку остальных тикеров.
 """
 
 from __future__ import annotations
@@ -89,11 +103,12 @@ def load_rules(path: Path) -> list[dict]:
     return rules
 
 
-def match_action(sentiment: float, rules: list[dict]) -> str:
+def match_action(sentiment: float, rules: list[dict]) -> str | None:
+    """Возвращает action первого подходящего правила, или None если ни одно не подошло."""
     for rule in rules:
         if float(rule["min"]) <= sentiment <= float(rule["max"]):
             return rule["action"]
-    return "skip"
+    return None
 
 
 def resolve_direction(sentiment: float, action: str) -> str:
@@ -108,7 +123,8 @@ def resolve_direction(sentiment: float, action: str) -> str:
 
 def get_today_sentiment(pkl_path: Path, today: date) -> float | None:
     """Возвращает значение sentiment за сегодня или None, если строки нет.
-    В pkl должна быть одна строка на дату (см. sentiment_analysis.py)."""
+    В pkl должна быть одна строка на дату (см. sentiment_analysis.py).
+    Кидает FileNotFoundError если pkl отсутствует, ValueError если дубль дат."""
     if not pkl_path.exists():
         raise FileNotFoundError(f"Файл sentiment PKL не найден: {pkl_path}")
     with pkl_path.open("rb") as f:
@@ -130,71 +146,140 @@ def get_today_sentiment(pkl_path: Path, today: date) -> float | None:
     if len(today_rows) > 1:
         raise ValueError(
             f"В pkl несколько строк за {today}: ожидалась одна. "
-            "Перегенерируй pkl: sentiment_analysis.py теперь хранит одну строку на дату."
+            "Перегенерируй pkl: sentiment_analysis.py хранит одну строку на дату."
         )
     return float(today_rows["sentiment"].iloc[0])
+
+
+def write_predict(
+    out_file: Path,
+    date_str: str,
+    direction: str,
+    status: str,
+    sentiment: float | None = None,
+    action: str | None = None,
+    note: str = "",
+) -> None:
+    """Атомарно пишет файл предсказания. direction — итоговое направление (up/down/skip)."""
+    sentiment_label = f"{sentiment:.2f}" if sentiment is not None else "n/a"
+    action_label = action if action is not None else "n/a"
+    lines = [
+        f"Дата: {date_str}",
+        f"Sentiment: {sentiment_label}",
+        f"Action: {action_label}",
+        f"Status: {status}",
+    ]
+    if note:
+        lines.append(f"Note: {note}")
+    lines.append(f"Предсказанное направление: {direction}")
+    content = "\n".join(lines) + "\n"
+
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = out_file.with_suffix(out_file.suffix + ".tmp")
+    tmp_file.write_text(content, encoding="utf-8")
+    tmp_file.replace(out_file)
 
 
 def main() -> int:
     logger = setup_logging()
 
-    # --- Загрузка настроек из rts/settings.yaml (common + sentiment) ---
-    _raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
-    settings = {**(_raw.get("common") or {}), **(_raw.get("sentiment") or {})}
-    _t = settings.get("ticker", "")
-    _tl = settings.get("ticker_lc", _t.lower())
-    for _k, _v in list(settings.items()):
-        if isinstance(_v, str):
-            settings[_k] = _v.replace("{ticker}", _t).replace("{ticker_lc}", _tl)
+    try:
+        # --- Загрузка настроек из <ticker>/settings.yaml (common + sentiment) ---
+        _raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+        settings = {**(_raw.get("common") or {}), **(_raw.get("sentiment") or {})}
+        _t = settings.get("ticker", "")
+        _tl = settings.get("ticker_lc", _t.lower())
+        for _k, _v in list(settings.items()):
+            if isinstance(_v, str):
+                settings[_k] = _v.replace("{ticker}", _t).replace("{ticker_lc}", _tl)
 
-    rules = load_rules(TICKER_DIR / "rules.yaml")
+        predict_path = Path(settings["predict_path"])
+        predict_path.mkdir(parents=True, exist_ok=True)
 
-    predict_path = Path(settings["predict_path"])
-    predict_path.mkdir(parents=True, exist_ok=True)
+        today = date.today()
+        date_str = today.strftime("%Y-%m-%d")
+        out_file = predict_path / f"{date_str}.txt"
 
-    pkl_path = Path(settings.get("sentiment_output_pkl", "sentiment_scores.pkl"))
-    if not pkl_path.is_absolute():
-        pkl_path = TICKER_DIR / pkl_path
+        if out_file.exists():
+            cutoff = datetime.combine(today, datetime.strptime(settings["time_start"], "%H:%M:%S").time())
+            file_mtime = datetime.fromtimestamp(out_file.stat().st_mtime)
+            if file_mtime < cutoff:
+                logger.info(f"Файл {out_file} создан до {settings['time_start']} (тестовый) — перезаписываем.")
+            else:
+                logger.info(f"Файл {out_file} уже существует — пропуск.")
+                return 0
 
-    today = date.today()
-    out_file = predict_path / f"{today.strftime('%Y-%m-%d')}.txt"
+        rules = load_rules(TICKER_DIR / "rules.yaml")
 
-    if out_file.exists():
-        cutoff = datetime.combine(date.today(), datetime.strptime(settings["time_start"], "%H:%M:%S").time())
-        file_mtime = datetime.fromtimestamp(out_file.stat().st_mtime)
-        if file_mtime < cutoff:
-            logger.info(f"Файл {out_file} создан до {settings['time_start']} (тестовый) — перезаписываем.")
-        else:
-            logger.info(f"Файл {out_file} уже существует — пропуск.")
+        pkl_path = Path(settings.get("sentiment_output_pkl", "sentiment_scores.pkl"))
+        if not pkl_path.is_absolute():
+            pkl_path = TICKER_DIR / pkl_path
+
+        try:
+            sentiment = get_today_sentiment(pkl_path, today)
+        except FileNotFoundError as exc:
+            logger.error(f"pkl_missing: {exc}")
+            write_predict(out_file, date_str, "skip", "pkl_missing", note=str(exc))
+            return 0
+        except ValueError as exc:
+            msg = str(exc)
+            status = "pkl_duplicate" if "несколько строк" in msg else "error"
+            logger.error(f"{status}: {msg}")
+            write_predict(out_file, date_str, "skip", status, note=msg)
             return 0
 
-    sentiment = get_today_sentiment(pkl_path, today)
-    if sentiment is None:
-        logger.info(f"В pkl нет записи за {today}. Файл предсказания не создаётся.")
+        if sentiment is None:
+            logger.info(f"В pkl нет записи за {today}.")
+            write_predict(out_file, date_str, "skip", "no_pkl_row",
+                          note=f"в sentiment_scores.pkl нет строки за {date_str}")
+            return 0
+
+        action = match_action(sentiment, rules)
+        if action is None:
+            logger.info(f"{today}: sentiment={sentiment:.2f} не попал ни в один диапазон rules.yaml.")
+            write_predict(out_file, date_str, "skip", "no_rule_match",
+                          sentiment=sentiment,
+                          note="sentiment вне всех диапазонов rules.yaml")
+            return 0
+
+        direction = resolve_direction(sentiment, action)
+        logger.info(f"{today}: sentiment={sentiment:.2f}, action={action}, direction={direction}")
+
+        if direction == "skip":
+            if action == "skip":
+                status = "rule_skip"
+                note = "правило для этого диапазона sentiment предписывает skip"
+            else:
+                status = "sentiment_zero"
+                note = "sentiment == 0 при ненулевом action"
+            write_predict(out_file, date_str, "skip", status,
+                          sentiment=sentiment, action=action, note=note)
+            return 0
+
+        write_predict(out_file, date_str, direction, "ok",
+                      sentiment=sentiment, action=action)
+        logger.info(f"Записан файл предсказания: {out_file}")
         return 0
 
-    action = match_action(sentiment, rules)
-    direction = resolve_direction(sentiment, action)
-
-    logger.info(f"{today}: sentiment={sentiment:.2f}, action={action}, direction={direction}")
-
-    if direction == "skip":
-        logger.info("Направление = skip. Файл предсказания не создаётся.")
+    except Exception as exc:
+        logger.exception("Необработанная ошибка sentiment_to_predict")
+        try:
+            today = date.today()
+            date_str = today.strftime("%Y-%m-%d")
+            raw = yaml.safe_load((TICKER_DIR / "settings.yaml").read_text(encoding="utf-8"))
+            merged = {**(raw.get("common") or {}), **(raw.get("sentiment") or {})}
+            _t = merged.get("ticker", "")
+            _tl = merged.get("ticker_lc", _t.lower())
+            predict_path = Path(
+                merged.get("predict_path", str(TICKER_DIR / "predict"))
+                .replace("{ticker}", _t).replace("{ticker_lc}", _tl)
+            )
+            out_file = predict_path / f"{date_str}.txt"
+            write_predict(out_file, date_str, "skip", "error",
+                          note=f"{type(exc).__name__}: {exc}")
+        except Exception as write_exc:
+            logger.error(f"Не удалось записать файл предсказания с ошибкой: {write_exc}")
         return 0
-
-    content = (
-        f"Дата: {today.strftime('%Y-%m-%d')}\n"
-        f"Sentiment: {sentiment:.2f}\n"
-        f"Action: {action}\n"
-        f"Предсказанное направление: {direction}\n"
-    )
-
-    tmp_file = out_file.with_suffix(out_file.suffix + ".tmp")
-    tmp_file.write_text(content, encoding="utf-8")
-    tmp_file.replace(out_file)
-
-    logger.info(f"Записан файл предсказания: {out_file}")
-    return 0
 
 
 if __name__ == "__main__":
